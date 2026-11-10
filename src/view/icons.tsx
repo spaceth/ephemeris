@@ -8,6 +8,14 @@ export function PlayIcon({ className }: IconProps) {
   );
 }
 
+export function ChevronIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 9 L12 15 L18 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function PauseIcon({ className }: IconProps) {
   return (
     <svg className={className} width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">

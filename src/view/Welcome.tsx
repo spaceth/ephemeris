@@ -1,4 +1,7 @@
+import { useId, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { ChevronIcon } from "./icons";
+import { useDismiss } from "./useDismiss";
 
 type Example = { id: string; label: string };
 
@@ -9,6 +12,7 @@ export function Welcome({
   webgl,
   onPick,
   onExample,
+  leaving,
 }: {
   examples: readonly Example[];
   loading: boolean;
@@ -16,9 +20,10 @@ export function Welcome({
   webgl: boolean;
   onPick: (event: ChangeEvent<HTMLInputElement>) => void;
   onExample: (id: string) => void;
+  leaving: boolean;
 }) {
   return (
-    <div className="welcome material">
+    <div className={leaving ? "welcome material is-leaving" : "welcome material"}>
       <div className="tight">
         <h1>Ephemeris Visualization</h1>
         <p>Upload a CCSDS OEM, or start from an example.</p>
@@ -38,28 +43,66 @@ export function Welcome({
         </div>
         <div className="welcome-col">
           <h2>Select from example</h2>
-          <label className="field">
-            <select
-              value=""
-              disabled={loading}
-              aria-label="Select from example"
-              onChange={(event) => {
-                const id = event.target.value;
-                if (id) onExample(id);
-              }}
-            >
-              <option value="">Choose an example</option>
-              {examples.map((example) => (
-                <option key={example.id} value={example.id}>{example.label}</option>
-              ))}
-            </select>
-          </label>
-          <p>EM-2, an Earth-centered EME2000 ephemeris.</p>
+          <ExamplePicker examples={examples} loading={loading} onExample={onExample} />
+          <p>EM-2 and ISS, Earth-centered EME2000 ephemerides.</p>
         </div>
       </div>
       {loading && <p className="meta">Reading…</p>}
       {error && <p className="fail" role="alert">{error}</p>}
       {!webgl && <p className="note">WebGL is unavailable. Metadata still runs.</p>}
+    </div>
+  );
+}
+
+function ExamplePicker({
+  examples,
+  loading,
+  onExample,
+}: {
+  examples: readonly Example[];
+  loading: boolean;
+  onExample: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  useDismiss(open, rootRef, setOpen);
+
+  return (
+    <div className={open ? "picker is-open" : "picker"} ref={rootRef}>
+      <button
+        type="button"
+        className="picker-trigger pressable"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label="Select from example"
+        disabled={loading}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>Choose an example</span>
+        <ChevronIcon className="picker-chevron" />
+      </button>
+      {open && (
+        <ul className="picker-menu" id={listId} role="listbox" aria-label="Examples">
+          {examples.map((example) => (
+            <li key={example.id} role="presentation">
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                className="picker-option"
+                onClick={() => {
+                  setOpen(false);
+                  onExample(example.id);
+                }}
+              >
+                {example.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

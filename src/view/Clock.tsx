@@ -1,6 +1,10 @@
+import { useRef, useState } from "react";
 import type { OemFile } from "../core";
+import { CameraPicker } from "./CameraPicker";
+import type { CameraMode } from "./camera";
 import { PauseIcon, PlayIcon } from "./icons";
 import { HideButton } from "./HideButton";
+import { useBoxMotion } from "./useBoxMotion";
 
 const SPEEDS = [1, 30, 120, 600, 3600] as const;
 
@@ -22,6 +26,8 @@ export function Clock({
   onSpeed,
   onReset,
   onLive,
+  cameraMode,
+  onCameraMode,
 }: {
   file: OemFile;
   open: boolean;
@@ -40,13 +46,26 @@ export function Clock({
   onSpeed: (speed: number) => void;
   onReset: () => void;
   onLive: () => void;
+  cameraMode: CameraMode;
+  onCameraMode: (mode: CameraMode) => void;
 }) {
   const coverage = span && span.stop > span.start ? span : null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [arrived, setArrived] = useState(false);
+  useBoxMotion(open, rootRef);
+  const clockClass = ["clock", "material", open ? "" : "is-collapsed", arrived ? "" : "tool-enter"].filter(Boolean).join(" ");
   return (
-    <div className={open ? "clock material" : "clock material is-collapsed"}>
+    <div
+      ref={rootRef}
+      className={clockClass}
+      onAnimationEnd={(event) => {
+        if (event.animationName === "clock-in") setArrived(true);
+      }}
+    >
       <div className="box-head">
-        <h2 className="box-title">Time</h2>
-        <HideButton open={open} label="time" onClick={onToggleOpen} />
+        <h2 className="box-title">Viewing</h2>
+        {open && <CameraPicker mode={cameraMode} disabled={!webgl} onChange={onCameraMode} />}
+        <HideButton open={open} label="viewing" onClick={onToggleOpen} />
       </div>
       <div className="clock-main">
         {open && (
@@ -64,7 +83,7 @@ export function Clock({
             </button>
             <button
               type="button"
-              className="round-control pressable live-btn"
+              className={showingLive ? "round-control pressable live-btn is-live" : "round-control pressable live-btn"}
               onClick={onLive}
               disabled={!liveEnabled}
               title={liveEnabled ? "Jump to the current UTC" : "Current UTC is outside this ephemeris"}

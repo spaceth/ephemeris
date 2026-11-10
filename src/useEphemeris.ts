@@ -3,11 +3,14 @@ import type { ChangeEvent, DragEvent } from "react";
 import { coverageSpan, liveSeconds } from "./core";
 import type { OemFile } from "./core";
 import type { ArcBuffer, WorkerResponse } from "./session";
-import type { SceneClock } from "./view/OrbitView";
+import type { SceneClock } from "./view/types";
 
 const MAX_BYTES = 32 * 1024 * 1024;
 
-export const EXAMPLES = [{ id: "EM2", label: "EM-2", path: "/sample/EM2.oem", fileName: "EM2.oem" }] as const;
+export const EXAMPLES = [
+  { id: "EM2", label: "EM-2", path: "/sample/EM2.oem", fileName: "EM2.oem" },
+  { id: "ISS", label: "ISS", path: "/sample/ISS.OEM_J2K_EPH.txt", fileName: "ISS.OEM_J2K_EPH.txt" },
+] as const;
 
 function webglAvailable(): boolean {
   try {
@@ -86,9 +89,27 @@ export function useEphemeris() {
     setPlaying(true);
   }, []);
 
+  const closeFile = useCallback(() => {
+    parseId.current += 1;
+    playingRef.current = false;
+    clockRef.current.file = null;
+    clockRef.current.t = 0;
+    clockRef.current.segment = 0;
+    setPlaying(false);
+    setFile(null);
+    setArcs([]);
+    setFileName("");
+    setError(null);
+    setLoading(false);
+    setT(0);
+    setSegment(0);
+  }, []);
+
   const goLive = useCallback(() => {
     const at = fileRef.current ? liveSeconds(fileRef.current, new Date()) : null;
     if (at == null) return;
+    speedRef.current = 1;
+    setSpeed(1);
     seek(at);
   }, [seek]);
 
@@ -173,9 +194,11 @@ export function useEphemeris() {
   }, [ingest]);
 
   useEffect(() => {
+    if (!file) return;
+    setNow(new Date());
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [file]);
 
   useEffect(() => {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
@@ -208,6 +231,7 @@ export function useEphemeris() {
   }, []);
 
   useEffect(() => {
+    if (!file) return;
     let frame = 0;
     let last = performance.now();
     let painted = 0;
@@ -233,7 +257,7 @@ export function useEphemeris() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [file]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -286,6 +310,7 @@ export function useEphemeris() {
     clockRef,
     onPick,
     loadExample,
+    closeFile,
     seek,
     togglePlay,
     goLive,
@@ -295,3 +320,5 @@ export function useEphemeris() {
     onDrop,
   };
 }
+
+export type EphemerisSession = ReturnType<typeof useEphemeris>;

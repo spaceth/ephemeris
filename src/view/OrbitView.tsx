@@ -1,22 +1,16 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
-import type { ComponentRef } from "react";
+import type { RefObject } from "react";
 import * as THREE from "three";
-import { stateAt } from "../core/evaluate";
-import { toScene } from "../core/scene";
-import type { OemFile } from "../core/oem";
 import type { ArcBuffer } from "../session";
+import { CameraDirector } from "./CameraDirector";
+import type { CameraMode } from "./camera";
+import { EARTH_RADIUS_KM, readCraft } from "./craftPose";
+import type { CraftPose } from "./craftPose";
+import type { SceneClock } from "./types";
 
 const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
-/** WGS84 equatorial radius, scene kilometers. The sphere is not oriented: a plain sphere has no longitude. */
-const EARTH_RADIUS_KM = 6378.137;
-
-export type SceneClock = {
-  file: OemFile | null;
-  t: number;
-  segment: number;
-};
 
 type OrbitProps = {
   arcs: ArcBuffer[];
@@ -24,6 +18,8 @@ type OrbitProps = {
   clock: { current: SceneClock };
   fit: number;
   resetToken: number;
+  cameraMode: CameraMode;
+  onCameraMode: (mode: CameraMode) => void;
 };
 
 function ArcLine({ positions, opacity }: { positions: Float32Array; opacity: number }) {
@@ -75,22 +71,29 @@ function circleTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-function Craft({ clock }: { clock: { current: SceneClock } }) {
+/** Samples the spacecraft once per frame, before the marker and the camera read it. */
+function CraftProbe({ clock, pose }: { clock: { current: SceneClock }; pose: RefObject<CraftPose | null> }) {
+  const local = useMemo<CraftPose>(() => ({ ok: false, pos: new THREE.Vector3(), vel: new THREE.Vector3() }), []);
+  useFrame(() => {
+    readCraft(clock, local);
+    pose.current = local;
+  });
+  return null;
+}
+
+function Craft({ pose }: { pose: RefObject<CraftPose | null> }) {
   const points = useRef<THREE.Points>(null);
   const map = useMemo(() => circleTexture(), []);
   useEffect(() => () => map.dispose(), [map]);
   useFrame(() => {
     const node = points.current;
-    const file = clock.current.file;
-    if (!node || !file) return;
-    const state = stateAt(file, clock.current.t, clock.current.segment);
-    if (!state.ok || !state.eme2000PositionM) {
-      node.visible = false;
+    const sample = pose.current;
+    if (!node || !sample?.ok) {
+      if (node) node.visible = false;
       return;
     }
-    const scene = toScene(state.eme2000PositionM[0], state.eme2000PositionM[1], state.eme2000PositionM[2]);
     node.visible = true;
-    node.position.set(scene[0], scene[1], scene[2]);
+    node.position.copy(sample.pos);
   });
   return (
     <points ref={points} frustumCulled={false} visible={false}>
@@ -111,25 +114,26 @@ function Craft({ clock }: { clock: { current: SceneClock } }) {
   );
 }
 
-function CameraRig({ fit, resetToken }: { fit: number; resetToken: number }) {
+function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number; mode: CameraMode }) {
   const camera = useThree((state) => state.camera);
-  const controls = useThree((state) => state.controls);
+  const controls = useThree((state) => state.controls) as { target?: THREE.Vector3; update?: () => void } | null;
   useEffect(() => {
+    if (mode !== "overview") return;
     const radius = Math.max(fit, 16);
+    camera.up.set(0, 1, 0);
     camera.position.set(radius * 0.2, radius * 0.55, radius * 1.45);
     camera.near = 0.02;
     camera.far = 1e8;
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
-    const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null;
-    orbit?.target?.set(0, 0, 0);
-    orbit?.update?.();
-  }, [camera, controls, fit, resetToken]);
+    controls?.target?.set(0, 0, 0);
+    controls?.update?.();
+  }, [camera, controls, fit, mode, resetToken]);
   return null;
 }
 
-export function OrbitView({ arcs, selected, clock, fit, resetToken }: OrbitProps) {
-  const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
+export function OrbitView({ arcs, selected, clock, fit, resetToken, cameraMode, onCameraMode }: OrbitProps) {
+  const pose = useRef<CraftPose | null>(null);
   return (
     <Canvas
       className="stage"
@@ -146,21 +150,19 @@ export function OrbitView({ arcs, selected, clock, fit, resetToken }: OrbitProps
           opacity={arc.segmentIndex === selected ? 0.95 : 0.32}
         />
       ))}
-      <Craft clock={clock} />
-      <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.08} minDistance={0.15} maxDistance={Math.max(fit, 16) * 30} />
-      <CameraRig fit={fit} resetToken={resetToken} />
+      <CraftProbe clock={clock} pose={pose} />
+      <Craft pose={pose} />
+      <OrbitControls
+        makeDefault
+        enabled
+        enablePan={cameraMode === "overview"}
+        enableDamping
+        dampingFactor={0.08}
+        minDistance={cameraMode === "overview" ? 0.15 : 40}
+        maxDistance={Math.max(fit, 16) * 30}
+      />
+      <CameraRig fit={fit} resetToken={resetToken} mode={cameraMode} />
+      <CameraDirector pose={pose} mode={cameraMode} onCameraMode={onCameraMode} />
     </Canvas>
   );
-}
-
-export function trajectoryRadius(arcs: ArcBuffer[]): number {
-  let radius = 12;
-  for (const arc of arcs) {
-    const values = arc.positions;
-    for (let i = 0; i < values.length; i += 3) {
-      const reach = Math.hypot(values[i], values[i + 1], values[i + 2]);
-      if (reach > radius) radius = reach;
-    }
-  }
-  return radius;
 }
