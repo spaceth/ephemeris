@@ -1,0 +1,27 @@
+import { parseOem } from "./core/oem";
+import { buildArcs, type WorkerRequest, type WorkerResponse } from "./session";
+
+type WorkerScope = {
+  onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage: (message: WorkerResponse, transfer?: Transferable[]) => void;
+};
+
+const scope = self as unknown as WorkerScope;
+
+function post(message: WorkerResponse, transfer?: Transferable[]) {
+  if (transfer && transfer.length > 0) scope.postMessage(message, transfer);
+  else scope.postMessage(message);
+}
+
+scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  const message = event.data;
+  if (message.type !== "parse") return;
+  try {
+    const file = parseOem(message.text);
+    const arcs = buildArcs(file);
+    post({ type: "parsed", id: message.id, name: message.name, file, arcs }, arcs.map((arc) => arc.positions.buffer));
+  } catch (error) {
+    const text = error instanceof Error ? error.message : "Could not read this OEM";
+    post({ type: "parse-error", id: message.id, message: text });
+  }
+};
