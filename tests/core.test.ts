@@ -617,4 +617,14 @@ describe("sample OEM", () => {
     expect(state.ok).toBe(true);
     if (state.ok) expect(state.positionM[0]).toBeCloseTo(357.5661416713739 * 1000, 3);
   });
+
+  it("reads the LRO ephemeris as Moon-centered EME2000", () => {
+    const lro = parseOem(readFileSync(new URL("../lrorg_2009169_2010001_v01.oem", import.meta.url), "utf8"));
+    expect(lro.segments).toHaveLength(197);
+    expect(lro.segments.every((segment) => segment.objectName === "LUNAR RECONNAISSANCE ORBITER")).toBe(true);
+    expect(lro.segments.every((segment) => segment.centerName === "MOON" && segment.refFrame === "EME2000")).toBe(true);
+    expect(lro.segments.every((segment) => segment.calculationSupported)).toBe(true);
+    const first = lro.segments[0].samples[0];
+    expect(stateAt(lro, first.t ?? 0, 0).ok).toBe(true);
+  }, 120_000);
 });

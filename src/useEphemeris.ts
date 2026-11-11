@@ -5,13 +5,14 @@ import type { OemFile } from "./core";
 import type { ArcBuffer, WorkerResponse } from "./session";
 import type { SceneClock } from "./view/types";
 
-const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_BYTES = 50 * 1024 * 1024;
 
 export const EXAMPLES = [
   { id: "EM2", label: "EM-2", path: "/sample/EM2.oem", fileName: "EM2.oem" },
   { id: "ISS", label: "ISS", path: "/sample/ISS.OEM_J2K_EPH.txt", fileName: "ISS.OEM_J2K_EPH.txt" },
   { id: "DART", label: "DART", path: "/sample/dart_2021_328_2022_091_rec_v01.oem", fileName: "dart_2021_328_2022_091_rec_v01.oem" },
   { id: "CE7", label: "CE7", path: "/sample/CE7_Trajectory_2027.oem", fileName: "CE7_Trajectory_2027.oem" },
+  { id: "LRO", label: "LRO", path: "/sample/lrorg_2009169_2010001_v01.oem", fileName: "lrorg_2009169_2010001_v01.oem" },
 ] as const;
 
 function webglAvailable(): boolean {
@@ -128,7 +129,7 @@ export function useEphemeris() {
   const submit = useCallback((text: string, name: string) => {
     if (text.length > MAX_BYTES) {
       setLoading(false);
-      setError("File is larger than 32 MB.");
+      setError("File is larger than 50 MB.");
       return;
     }
     if (!workerRef.current) {
@@ -144,7 +145,7 @@ export function useEphemeris() {
 
   const ingest = useCallback(async (picked: File) => {
     if (picked.size > MAX_BYTES) {
-      setError("File is larger than 32 MB.");
+      setError("File is larger than 50 MB.");
       return;
     }
     setLoading(true);

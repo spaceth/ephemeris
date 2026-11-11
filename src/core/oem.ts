@@ -17,7 +17,7 @@ import {
 import { orbitCenter } from "./centers";
 import { supportedFrame } from "./frames";
 
-export const MAX_OEM_CHARS = 32 * 1024 * 1024;
+export const MAX_OEM_CHARS = 50 * 1024 * 1024;
 
 export class OemParseError extends Error {
   readonly context?: string;

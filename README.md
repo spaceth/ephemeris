@@ -18,11 +18,11 @@ npm run typecheck
 npm run build
 ```
 
-`npm run build` writes static files to `dist/`. The bundled samples are `public/sample/EM2.oem`, a copy of `example.oem`, `public/sample/CE7_Trajectory_2027.oem`, and `public/sample/dart_2021_328_2022_091_rec_v01.oem`.
+`npm run build` writes static files to `dist/`. The bundled samples are `public/sample/EM2.oem`, a copy of `example.oem`, `public/sample/CE7_Trajectory_2027.oem`, `public/sample/lrorg_2009169_2010001_v01.oem`, and `public/sample/dart_2021_328_2022_091_rec_v01.oem`.
 
 ## What you can open
 
-OEM 2.0 and 3.0, KVN or XML, one OEM object, any number of segments. The format is detected from the contents after a BOM and leading whitespace. The extension is only a picker hint. Files larger than 32 MB are rejected.
+OEM 2.0 and 3.0, KVN or XML, one OEM object, any number of segments. The format is detected from the contents after a BOM and leading whitespace. The extension is only a picker hint. Files larger than 50 MB are rejected.
 
 Preserved header and metadata: version, `CREATION_DATE`, `ORIGINATOR`, `MESSAGE_ID`, comments, and per segment `OBJECT_NAME`, `OBJECT_ID`, `CENTER_NAME`, `REF_FRAME`, `REF_FRAME_EPOCH`, `TIME_SYSTEM`, `START_TIME`, `STOP_TIME`, `USEABLE_START_TIME`, `USEABLE_STOP_TIME`, `INTERPOLATION`, and `INTERPOLATION_DEGREE`. Comments are shown as text. Covariance is kept and not drawn.
 
