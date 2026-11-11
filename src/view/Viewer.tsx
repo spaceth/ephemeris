@@ -1,6 +1,7 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { covers, liveSeconds, stateAt } from "../core";
+import { covers, liveSeconds, orbitCenter, stateAt } from "../core";
+import { arcsForCenter } from "../session";
 import type { EphemerisSession } from "../useEphemeris";
 import { Clock } from "./Clock";
 import { EphemerisPanel } from "./EphemerisPanel";
@@ -8,7 +9,7 @@ import { LeaveMenu } from "./LeaveMenu";
 import type { CameraMode } from "./camera";
 import { trajectoryRadius } from "./sceneFit";
 import type { ViewGate } from "./useViewGate";
-import { formatEpoch } from "./format";
+import { formatEpoch, readableUtc } from "./format";
 
 const OrbitView = lazy(() => import("./OrbitView").then((mod) => ({ default: mod.OrbitView })));
 
@@ -29,11 +30,20 @@ export function Viewer({
   onChrome: (style: CSSProperties) => void;
 }) {
   const file = session.file;
-  const fit = useMemo(() => (file ? trajectoryRadius(session.arcs) : 0), [file, session.arcs]);
+  const shownArcs = useMemo(
+    () => (file ? arcsForCenter(file, session.arcs, session.segment) : []),
+    [file, session.arcs, session.segment],
+  );
+  const shown = file?.segments[session.segment];
+  const center = shown ? orbitCenter(shown.centerName) : null;
+  const bodyRadiusKm = center?.radiusKm ?? null;
+  const fit = useMemo(() => trajectoryRadius(shownArcs), [shownArcs]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [clockOpen, setClockOpen] = useState(true);
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
+  const centerLabelEl = useRef<HTMLSpanElement>(null);
+  const objectLabelEl = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const style = {
@@ -51,7 +61,9 @@ export function Viewer({
   const liveAt = liveSeconds(file, session.now);
   const showingLive = liveAt != null && Math.abs(session.t - liveAt) <= LIVE_WINDOW;
   const covering = file.segments.filter((item) => covers(item, session.t));
-  const timeText = utc ? `${utc.text}${utc.dubious ? " · leap table expired" : ""}` : "—";
+  const readableTime = utc ? (readableUtc(utc.text) ?? utc.text) : "—";
+  const isoTime = utc?.text ?? null;
+  const timeNote = utc?.dubious ? "· leap table expired" : null;
   const viewing = gate === "view";
 
   return (
@@ -60,10 +72,16 @@ export function Viewer({
         {session.webgl ? (
           <Suspense fallback={null}>
             <OrbitView
-              arcs={session.arcs}
+              arcs={shownArcs}
               selected={session.segment}
               clock={session.clockRef}
               fit={fit}
+              centerName={center?.name ?? null}
+              centerLabel={shown?.centerName ?? ""}
+              objectLabel={shown?.objectName ?? ""}
+              centerLabelEl={centerLabelEl}
+              objectLabelEl={objectLabelEl}
+              bodyRadiusKm={bodyRadiusKm}
               resetToken={session.resetToken}
               cameraMode={cameraMode}
               onCameraMode={setCameraMode}
@@ -72,6 +90,12 @@ export function Viewer({
         ) : (
           <p className="banner">WebGL is unavailable. Metadata still runs.</p>
         )}
+        <span ref={centerLabelEl} className="scene-label">
+          {shown?.centerName ?? ""}
+        </span>
+        <span ref={objectLabelEl} className="scene-label">
+          {shown?.objectName ?? ""}
+        </span>
       </div>
       {viewing && !state.ok && <p className="banner">{state.message}</p>}
       {!viewing && (
@@ -91,7 +115,6 @@ export function Viewer({
           error={session.error}
           open={panelOpen}
           onToggle={() => setPanelOpen((value) => !value)}
-          onSelectSegment={session.setSegment}
           onHeight={setPanelHeight}
         />
       )}
@@ -101,7 +124,9 @@ export function Viewer({
           open={clockOpen}
           span={session.span}
           t={session.t}
-          timeText={timeText}
+          readableTime={readableTime}
+          isoTime={isoTime}
+          timeNote={timeNote}
           valueText={utc?.text ?? "No coverage"}
           playing={session.playing}
           speed={session.speed}

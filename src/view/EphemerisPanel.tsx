@@ -13,7 +13,6 @@ export function EphemerisPanel({
   error,
   open,
   onToggle,
-  onSelectSegment,
   onHeight,
 }: {
   file: OemFile;
@@ -24,7 +23,6 @@ export function EphemerisPanel({
   error: string | null;
   open: boolean;
   onToggle: () => void;
-  onSelectSegment: (index: number) => void;
   onHeight: (height: number) => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
@@ -55,7 +53,6 @@ export function EphemerisPanel({
             fileName={fileName}
             segment={segment}
             covering={covering}
-            onSelectSegment={onSelectSegment}
           />
         ) : (
           <MinimalMeta file={file} fileName={fileName} segment={segment} />

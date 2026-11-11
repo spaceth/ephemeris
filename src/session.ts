@@ -1,3 +1,4 @@
+import { orbitCenter } from "./core/centers";
 import { sourceToEme2000, supportedFrame } from "./core/frames";
 import type { SupportedFrame } from "./core/frames";
 import { bracketIndex, interpolateComponent } from "./core/interpolate";
@@ -32,12 +33,23 @@ type Curve = {
   vel: [number[], number[], number[]];
 };
 
-/** One scene polyline per segment, in EME2000 kilometers. Samples are refined with the segment interpolant so a close view does not show the chords. */
+/** Arcs that share the selected segment's center. Different centers are different origins and are not drawn together. */
+export function arcsForCenter(file: OemFile, arcs: ArcBuffer[], segmentIndex: number): ArcBuffer[] {
+  const selected = file.segments[segmentIndex];
+  const center = selected ? orbitCenter(selected.centerName) : null;
+  if (!center) return [];
+  return arcs.filter((arc) => {
+    const segment = file.segments[arc.segmentIndex];
+    return segment != null && orbitCenter(segment.centerName)?.name === center.name;
+  });
+}
+
+/** One scene polyline per segment, in center-relative EME2000 kilometers. Samples are refined with the segment interpolant so a close view does not show the chords. */
 export function buildArcs(file: OemFile): ArcBuffer[] {
   const arcs: ArcBuffer[] = [];
   for (const segment of file.segments) {
     const frame = supportedFrame(segment.refFrame);
-    if (!frame || segment.centerName.toUpperCase() !== "EARTH") continue;
+    if (!frame || !orbitCenter(segment.centerName)) continue;
     if (segment.evalStart == null || segment.evalStop == null) continue;
     const knots = usableKnots(segment, frame);
     if (knots.length < 2) continue;

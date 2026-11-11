@@ -13,7 +13,9 @@ export function Clock({
   open,
   span,
   t,
-  timeText,
+  readableTime,
+  isoTime,
+  timeNote,
   valueText,
   playing,
   speed,
@@ -33,7 +35,9 @@ export function Clock({
   open: boolean;
   span: { start: number; stop: number } | null;
   t: number;
-  timeText: string;
+  readableTime: string;
+  isoTime: string | null;
+  timeNote: string | null;
   valueText: string;
   playing: boolean;
   speed: number;
@@ -73,7 +77,15 @@ export function Clock({
             {playing ? <PauseIcon /> : <PlayIcon />}
           </button>
         )}
-        <span className="clock-time nums">{timeText}</span>
+        <span className="clock-times">
+          <span className="clock-time nums">{readableTime}</span>
+          {isoTime && (
+            <button type="button" className="clock-iso nums" onClick={() => void navigator.clipboard.writeText(isoTime)}>
+              {isoTime}
+            </button>
+          )}
+          {timeNote && <span className="clock-note nums">{timeNote}</span>}
+        </span>
       </div>
       {open && (
         <div className="clock-rest">

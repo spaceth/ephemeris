@@ -50,7 +50,24 @@ button:focus-visible,
 .app { position: relative; height: 100%; overflow: hidden; }
 
 .stage-wrap { position: absolute; inset: 0; }
-.stage { width: 100% !important; height: 100% !important; display: block; }
+.stage { position: relative; width: 100% !important; height: 100% !important; display: block; overflow: hidden; }
+
+.scene-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: block;
+  visibility: hidden;
+  color: #f5f5f7;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
 
 .welcome-bg {
   position: absolute;
@@ -395,7 +412,27 @@ label.round-control { display: inline-flex; align-items: center; cursor: pointer
   min-width: 0;
 }
 
+.clock-times {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
 .clock-time { font-size: 11px; }
+
+.clock-iso {
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: copy;
+}
+
+.clock-iso:hover { color: var(--fg); }
+
+.clock-note { font-size: 11px; color: var(--muted); }
 
 .play-btn {
   display: inline-flex;
@@ -474,7 +511,49 @@ button.live-btn.is-live .live-dot { background: #000; }
 
 .segment-block { border-top: 1px solid var(--line); padding-top: 12px; }
 
-.segment-choice { display: flex; align-items: center; gap: 8px; }
+.segment-toggle {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.segment-toggle:hover { color: var(--fg); }
+
+.segment-block.is-open .segment-toggle,
+.segment-block.is-active .segment-toggle { color: var(--fg); }
+
+.segment-label { flex: none; }
+
+.segment-center {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: right;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.segment-chevron {
+  flex: none;
+  align-self: center;
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.segment-block.is-open .segment-chevron { transform: rotate(180deg); color: var(--fg); }
+
+.segment-body { padding-top: 12px; }
 
 .picker { position: relative; width: 100%; }
 

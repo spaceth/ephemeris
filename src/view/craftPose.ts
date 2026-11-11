@@ -4,9 +4,6 @@ import { toScene } from "../core/scene";
 import type { SceneClock } from "./types";
 import type { Vector3 } from "three";
 
-/** WGS84 equatorial radius, scene kilometers. The sphere is not oriented. */
-export const EARTH_RADIUS_KM = 6378.137;
-
 export type CraftPose = {
   ok: boolean;
   pos: Vector3;

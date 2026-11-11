@@ -1,18 +1,23 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  centerKey,
   fromScene,
   GCRS_TO_EME2000,
   liveSeconds,
+  ORBIT_CENTERS,
+  orbitCenter,
   parseOem,
   radecEme2000,
+  segmentAtTime,
   sourceToEme2000,
   stateAt,
   toScene,
 } from "../src/core";
 import { hermiteCubic } from "../src/core/interpolate";
-import { buildArcs } from "../src/session";
+import { arcsForCenter, buildArcs } from "../src/session";
 import { parseUtcEpoch, taiSecondsBetween } from "../src/core/time";
+import { readableUtc } from "../src/view/format";
 
 const DEG = Math.PI / 180;
 
@@ -54,6 +59,13 @@ describe("time scales", () => {
     const cal = parseUtcEpoch("2026-04-02T00:00:00");
     const doy = parseUtcEpoch("2026-092T00:00:00");
     expect(taiSecondsBetween(cal.tai1, cal.tai2, doy.tai1, doy.tai2)).toBeCloseTo(0, 9);
+  });
+
+  it("reads a UTC epoch as a calendar date ahead of the ISO form", () => {
+    expect(readableUtc("2026-01-01T12:00:00.000")).toBe("1 January 2026 UTC 12:00:00");
+    expect(readableUtc("2026-04-02T01:57:37.084")).toBe("2 April 2026 UTC 01:57:37");
+    expect(readableUtc("2016-12-31T23:59:60.000")).toBe("31 December 2016 UTC 23:59:60");
+    expect(readableUtc("not-a-time")).toBeNull();
   });
 
   it("rejects a leap second on an ordinary day", () => {
@@ -226,6 +238,59 @@ META_STOP
   });
 });
 
+describe("segment clock", () => {
+  const file = parseOem(`CCSDS_OEM_VERS = 2.0
+CREATION_DATE = 2020-01-01T00:00:00
+ORIGINATOR = TEST
+META_START
+OBJECT_NAME = A
+OBJECT_ID = 1
+CENTER_NAME = EARTH
+REF_FRAME = EME2000
+TIME_SYSTEM = UTC
+START_TIME = 2020-01-01T00:00:00
+STOP_TIME = 2020-01-01T00:00:20
+META_STOP
+2020-01-01T00:00:00 0 0 0 0 0 0
+2020-01-01T00:00:20 1 0 0 0 0 0
+META_START
+OBJECT_NAME = A
+OBJECT_ID = 1
+CENTER_NAME = SUN
+REF_FRAME = EME2000
+TIME_SYSTEM = UTC
+START_TIME = 2020-01-01T00:00:10
+STOP_TIME = 2020-01-01T00:00:30
+META_STOP
+2020-01-01T00:00:10 2 0 0 0 0 0
+2020-01-01T00:00:30 3 0 0 0 0 0
+META_START
+OBJECT_NAME = A
+OBJECT_ID = 1
+CENTER_NAME = MOON
+REF_FRAME = EME2000
+TIME_SYSTEM = UTC
+START_TIME = 2020-01-01T00:00:40
+STOP_TIME = 2020-01-01T00:00:50
+META_STOP
+2020-01-01T00:00:40 4 0 0 0 0 0
+2020-01-01T00:00:50 5 0 0 0 0 0
+`);
+
+  it("stays on the current segment until the clock leaves it", () => {
+    expect(segmentAtTime(file, 15, 0)).toBe(0);
+    expect(segmentAtTime(file, 15, 1)).toBe(1);
+    expect(segmentAtTime(file, 25, 0)).toBe(1);
+    expect(segmentAtTime(file, 35, 1)).toBe(1);
+    expect(segmentAtTime(file, 45, 1)).toBe(2);
+    expect(segmentAtTime(file, 12, 0)).toBe(0);
+  });
+
+  it("enters the segment that started latest when the current one does not cover the epoch", () => {
+    expect(segmentAtTime(file, 15, 2)).toBe(1);
+  });
+});
+
 describe("parser", () => {
   it("reads equivalent KVN and XML, including a comment and unused covariance", () => {
     const kvnText = `CCSDS_OEM_VERS = 2.0
@@ -372,8 +437,155 @@ describe("orbit line", () => {
   });
 });
 
+describe("orbit centers", () => {
+  const sana = [
+    "EARTH",
+    "MOON",
+    "EARTH BARYCENTER",
+    "EARTH-MOON L1",
+    "EARTH-MOON L2",
+    "JUPITER",
+    "JUPITER BARYCENTER",
+    "MARS",
+    "MARS BARYCENTER",
+    "MERCURY",
+    "MERCURY BARYCENTER",
+    "NEPTUNE",
+    "NEPTUNE BARYCENTER",
+    "SATURN",
+    "SATURN BARYCENTER",
+    "SOLAR SYSTEM BARYCENTER",
+    "SUN",
+    "SUN-EARTH L1",
+    "SUN-EARTH L2",
+    "URANUS",
+    "URANUS BARYCENTER",
+    "VENUS",
+    "VENUS BARYCENTER",
+    "101955 BENNU",
+    "11351 LEUCUS",
+    "132524 APL",
+    "15094 POLYMELE",
+    "162173 RYUGU",
+    "16 PSYCHE",
+    "1 CERES",
+    "21900 ORUS",
+    "21 LUTETIA",
+    "243 IDA",
+    "25143 ITOKAWA",
+    "253 MATHILDE",
+    "2867 STEINS",
+    "3200 PHAETHON",
+    "3548 EURYBATES",
+    "4179 TOUTATIS",
+    "433 EROS",
+    "4 VESTA",
+    "52246 DONALDJOHANSON",
+    "5525 ANNEFRANK",
+    "617 PATROCLUS",
+    "65803 DIDYMOS/DIMORPHOS",
+    "951 GASPRA",
+    "9969 BRAILLE",
+    "ARROKOTH",
+    "PLUTO",
+    "PLUTO BARYCENTER",
+  ];
+
+  it("recognizes the SANA profile and the spellings an OEM is likely to use", () => {
+    expect(ORBIT_CENTERS.map((center) => center.name)).toEqual(sana);
+    expect(orbitCenter("sun")?.name).toBe("SUN");
+    expect(orbitCenter("(433) EROS")?.name).toBe("433 EROS");
+    expect(orbitCenter("65803 DIDYMOS / DIMORPHOS")?.name).toBe("65803 DIDYMOS/DIMORPHOS");
+    expect(orbitCenter("sun - earth l2")?.name).toBe("SUN-EARTH L2");
+    expect(centerKey("  earth   barycenter ")).toBe("EARTH BARYCENTER");
+    expect(orbitCenter("PHOBOS")).toBeNull();
+    expect(orbitCenter("EARTH")?.radiusKm).toBeCloseTo(6378.137, 3);
+    expect(orbitCenter("SUN")?.radiusKm).toBe(695700);
+    expect(orbitCenter("65803 DIDYMOS/DIMORPHOS")?.radiusKm).toBeNull();
+  });
+
+  it("evaluates a Sun-centered ICRF segment without mixing it into an Earth arc", () => {
+    const file = parseOem(`CCSDS_OEM_VERS = 2.0
+CREATION_DATE = 2021-11-24T00:00:00
+ORIGINATOR = TEST
+META_START
+OBJECT_NAME = DART
+OBJECT_ID = 2021-110A
+CENTER_NAME = EARTH
+REF_FRAME = ICRF
+TIME_SYSTEM = UTC
+START_TIME = 2021-11-24T07:16:43.817
+STOP_TIME = 2021-11-24T07:17:43.817
+INTERPOLATION = HERMITE
+INTERPOLATION_DEGREE = 3
+META_STOP
+2021-11-24T07:16:43.817 -9133.152291446924 -7851.170895174146 -6578.823413223028 -3.936042689017672 -6.878375617485837 1.332930223515555
+2021-11-24T07:17:43.817 -9366.822550453639 -8261.712295082447 -6497.074607502298 -3.853670879873274 -6.806644314641206 1.391165118349333
+META_START
+OBJECT_NAME = DART
+OBJECT_ID = 2021-110A
+CENTER_NAME = SUN
+REF_FRAME = ICRF
+TIME_SYSTEM = UTC
+START_TIME = 2021-11-27T19:35:28.624
+STOP_TIME = 2021-11-27T19:36:28.624
+INTERPOLATION = HERMITE
+INTERPOLATION_DEGREE = 3
+META_STOP
+2021-11-27T19:35:28.624 6.099203429564641e+07 1.224436357249959e+08 5.384883748073384e+07 -28.33093817186868 9.014711090291378 6.215886368968871
+2021-11-27T19:36:28.624 6.099033443501563e+07 1.224441765991609e+08 5.384921042946708e+07 -28.33108282484940 9.014427730766865 6.215738066754757
+`);
+    expect(file.segments[0].calculationSupported).toBe(true);
+    expect(file.segments[1].calculationSupported).toBe(true);
+    expect(file.segments[1].refFrame).toBe("ICRF");
+    const sun = stateAt(file, file.segments[1].evalStart ?? 0, 1);
+    expect(sun.ok).toBe(true);
+    if (sun.ok) {
+      expect(sun.positionM[0]).toBeCloseTo(Number("6.099203429564641e+07") * 1000, 3);
+      const turned = sourceToEme2000("ICRF", sun.positionM);
+      expect(sun.eme2000PositionM?.[0]).toBeCloseTo(turned[0], 4);
+      expect(sun.raRad).not.toBeNull();
+    }
+    const arcs = buildArcs(file);
+    expect(arcs.map((arc) => arc.segmentIndex)).toEqual([0, 1]);
+    expect(arcsForCenter(file, arcs, 0).map((arc) => arc.segmentIndex)).toEqual([0]);
+    expect(arcsForCenter(file, arcs, 1).map((arc) => arc.segmentIndex)).toEqual([1]);
+    const outside = parseOem(
+      kvn("", "2020-01-01T00:00:00 1 0 0 0 0 0\n2020-01-01T00:00:10 2 0 0 0 0 0").replace(
+        "CENTER_NAME = EARTH",
+        "CENTER_NAME = PHOBOS",
+      ),
+    );
+    expect(outside.segments[0].calculationSupported).toBe(false);
+    expect(outside.segments[0].unsupportedReason).toMatch(/SANA/);
+    expect(buildArcs(outside)).toEqual([]);
+  });
+
+  it("reads the DART reconstruction and keeps Earth and Sun apart", () => {
+    const file = parseOem(readFileSync(new URL("../dart_2021_328_2022_091_rec_v01.oem", import.meta.url), "utf8"));
+    expect(file.segments.length).toBeGreaterThan(2);
+    expect(file.segments[0].objectName).toBe("DART");
+    expect(file.segments[0].centerName).toBe("EARTH");
+    expect(file.segments[0].refFrame).toBe("ICRF");
+    expect(file.segments.every((segment) => segment.calculationSupported)).toBe(true);
+    expect(new Set(file.segments.map((segment) => segment.centerName))).toEqual(new Set(["EARTH", "SUN"]));
+    const earth = stateAt(file, file.segments[0].samples[0].t ?? 0, 0);
+    expect(earth.ok).toBe(true);
+    if (earth.ok) expect(earth.positionM[0]).toBeCloseTo(Number("-9.133152291446924e+03") * 1000, 3);
+    const sunIndex = file.segments.findIndex((segment) => segment.centerName === "SUN");
+    const sun = stateAt(file, file.segments[sunIndex].samples[0].t ?? 0, sunIndex);
+    expect(sun.ok).toBe(true);
+    if (sun.ok) expect(sun.positionM[0]).toBeCloseTo(Number("6.099203429564641e+07") * 1000, 3);
+    const arcs = buildArcs(file);
+    expect(arcsForCenter(file, arcs, 0).every((arc) => file.segments[arc.segmentIndex].centerName === "EARTH")).toBe(true);
+    expect(arcsForCenter(file, arcs, sunIndex).every((arc) => file.segments[arc.segmentIndex].centerName === "SUN")).toBe(true);
+    expect(arcsForCenter(file, arcs, sunIndex).some((arc) => arc.segmentIndex === 0)).toBe(false);
+  }, 120_000);
+});
+
 describe("sample OEM", () => {
   const file = parseOem(readFileSync(new URL("../example.oem", import.meta.url), "utf8"));
+  const ce7 = parseOem(readFileSync(new URL("../CE7_Trajectory_2027.oem", import.meta.url), "utf8"));
 
   it("reads the EM-2 file and recovers the first state", () => {
     expect(file.segments[0].objectName).toBe("EM2");
@@ -393,5 +605,16 @@ describe("sample OEM", () => {
       expect(again.raRad).toBeCloseTo(state.raRad ?? 0, 12);
       expect(again.decRad).toBeCloseTo(state.decRad ?? 0, 12);
     }
+  });
+
+  it("reads the CE7 trajectory as Earth-centered EME2000", () => {
+    expect(ce7.segments).toHaveLength(5);
+    expect(ce7.segments.every((segment) => segment.objectName === "CE7")).toBe(true);
+    expect(ce7.segments.every((segment) => segment.centerName === "EARTH" && segment.refFrame === "EME2000")).toBe(true);
+    expect(ce7.segments.every((segment) => segment.calculationSupported)).toBe(true);
+    const first = ce7.segments[0].samples[0];
+    const state = stateAt(ce7, first.t ?? 0, 0);
+    expect(state.ok).toBe(true);
+    if (state.ok) expect(state.positionM[0]).toBeCloseTo(357.5661416713739 * 1000, 3);
   });
 });

@@ -14,6 +14,7 @@ import {
   TimeScaleError,
   type TaiOrigin,
 } from "./time";
+import { orbitCenter } from "./centers";
 import { supportedFrame } from "./frames";
 
 export const MAX_OEM_CHARS = 32 * 1024 * 1024;
@@ -391,11 +392,11 @@ function buildSegment(
   }
 
   const frame = supportedFrame(meta.REF_FRAME);
-  const centerOk = meta.CENTER_NAME.toUpperCase() === "EARTH";
+  const center = orbitCenter(meta.CENTER_NAME);
   const reasons: string[] = [];
   if (!utc) reasons.push(`time system ${timeSystem} is not UTC`);
-  if (!centerOk) reasons.push(`center ${meta.CENTER_NAME} is not Earth`);
-  if (!frame) reasons.push(`frame ${meta.REF_FRAME} is not in the EME2000/GCRF profile`);
+  if (!center) reasons.push(`center ${meta.CENTER_NAME} is outside the SANA orbit-center profile`);
+  if (!frame) reasons.push(`frame ${meta.REF_FRAME} is not in the EME2000/GCRF/ICRF profile`);
   if (!plan.supported) reasons.push(plan.reason ?? "interpolation is not supported");
   void hasAccel;
 

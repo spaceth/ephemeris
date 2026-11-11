@@ -39,12 +39,12 @@ export function Welcome({
             Upload
             <input className="sr" type="file" accept=".oem,.xml,.txt,.kvn" aria-label="Upload ephemeris" onChange={onPick} />
           </label>
-          <p>OEM 2.0 and 3.0, KVN or XML. Earth center, EME2000 or GCRF.</p>
+          <p>OEM 2.0 and 3.0, KVN or XML. EME2000, GCRF, or ICRF about a SANA orbit center.</p>
         </div>
         <div className="welcome-col">
           <h2>Select from example</h2>
           <ExamplePicker examples={examples} loading={loading} onExample={onExample} />
-          <p>EM-2 and ISS, Earth-centered EME2000 ephemerides.</p>
+          <p>EM-2, ISS, and CE7, Earth-centered EME2000 ephemerides. DART, Earth then Sun in ICRF.</p>
         </div>
       </div>
       {loading && <p className="meta">Reading…</p>}

@@ -1,5 +1,6 @@
 /**
- * Geocentric right ascension and declination of an EME2000 position.
+ * Right ascension and declination of an EME2000 position relative to its origin.
+ * The angles are geocentric only when that origin is Earth.
  * Right ascension is undefined on the celestial pole and at the origin.
  * These angles are geometric: no light-time, aberration, or refraction.
  * The viewer does not plot them yet. stateAt keeps them for a later sky plot.

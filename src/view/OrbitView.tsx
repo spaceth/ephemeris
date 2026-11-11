@@ -6,17 +6,29 @@ import * as THREE from "three";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
 import type { CameraMode } from "./camera";
-import { EARTH_RADIUS_KM, readCraft } from "./craftPose";
+import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
 import type { SceneClock } from "./types";
 
 const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
+const CENTER_ORIGIN = new Float32Array([0, 0, 0]);
 
 type OrbitProps = {
   arcs: ArcBuffer[];
   selected: number;
   clock: { current: SceneClock };
   fit: number;
+  /** Canonical center name. The Sun is its own sphere; other bodies share the plain sphere. */
+  centerName: string | null;
+  /** Name drawn on the center. Empty hides the label. */
+  centerLabel: string;
+  /** Name drawn on the spacecraft. Empty hides the label. */
+  objectLabel: string;
+  /** Screen labels. The scene writes their position each frame. */
+  centerLabelEl: RefObject<HTMLSpanElement | null>;
+  objectLabelEl: RefObject<HTMLSpanElement | null>;
+  /** Equatorial radius of the body at the origin. Null draws an origin mark. */
+  bodyRadiusKm: number | null;
   resetToken: number;
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
@@ -32,7 +44,9 @@ function ArcLine({ positions, opacity }: { positions: Float32Array; opacity: num
       opacity,
       toneMapped: false,
     });
-    return new THREE.Line(geometry, material);
+    const next = new THREE.Line(geometry, material);
+    next.frustumCulled = false;
+    return next;
   }, [positions, opacity]);
   useEffect(() => {
     return () => {
@@ -44,13 +58,50 @@ function ArcLine({ positions, opacity }: { positions: Float32Array; opacity: num
   return <primitive object={line} />;
 }
 
-function Earth() {
-  const geometry = useMemo(() => new THREE.SphereGeometry(EARTH_RADIUS_KM, 64, 48), []);
+/** Untextured solar sphere. A light gives it a limb so the ball reads as solid. */
+function SunSphere({ radiusKm }: { radiusKm: number }) {
+  const geometry = useMemo(() => new THREE.SphereGeometry(radiusKm, 64, 48), [radiusKm]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <>
+      <ambientLight intensity={0.4} />
+      <directionalLight position={[1, 0.35, 0.6]} intensity={1.4} />
+      <mesh geometry={geometry}>
+        <meshLambertMaterial color="#f5f5f7" toneMapped={false} />
+      </mesh>
+    </>
+  );
+}
+
+function BodySphere({ radiusKm }: { radiusKm: number }) {
+  const geometry = useMemo(() => new THREE.SphereGeometry(radiusKm, 64, 48), [radiusKm]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <mesh geometry={geometry}>
       <meshBasicMaterial color="#3a3a3c" toneMapped={false} />
     </mesh>
+  );
+}
+
+function OriginMark() {
+  const map = useMemo(() => circleTexture(), []);
+  useEffect(() => () => map.dispose(), [map]);
+  return (
+    <points frustumCulled={false}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[CENTER_ORIGIN, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        map={map}
+        color="#a1a1a6"
+        size={8}
+        sizeAttenuation={false}
+        transparent
+        alphaTest={0.5}
+        toneMapped={false}
+        depthTest={false}
+      />
+    </points>
   );
 }
 
@@ -114,6 +165,61 @@ function Craft({ pose }: { pose: RefObject<CraftPose | null> }) {
   );
 }
 
+function placeLabel(
+  el: HTMLSpanElement | null,
+  world: THREE.Vector3,
+  show: boolean,
+  camera: THREE.Camera,
+  size: { width: number; height: number },
+  scratch: THREE.Vector3,
+  forward: THREE.Vector3,
+) {
+  if (!el) return;
+  if (!show) {
+    el.style.visibility = "hidden";
+    return;
+  }
+  const ahead = scratch.copy(world).sub(camera.position).dot(camera.getWorldDirection(forward)) > 0;
+  scratch.copy(world).project(camera);
+  if (!ahead) {
+    el.style.visibility = "hidden";
+    return;
+  }
+  const x = (scratch.x * 0.5 + 0.5) * size.width;
+  const y = (-scratch.y * 0.5 + 0.5) * size.height;
+  el.style.visibility = "visible";
+  el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, calc(-100% - 8px))`;
+}
+
+/** Screen-space names. The center sits just above its limb; a point sits just above the mark. */
+function SceneLabels({
+  centerLabel,
+  objectLabel,
+  radiusKm,
+  pose,
+  centerEl,
+  craftEl,
+}: {
+  centerLabel: string;
+  objectLabel: string;
+  radiusKm: number;
+  pose: RefObject<CraftPose | null>;
+  centerEl: RefObject<HTMLSpanElement | null>;
+  craftEl: RefObject<HTMLSpanElement | null>;
+}) {
+  const lift = useMemo(() => new THREE.Vector3(), []);
+  const scratch = useMemo(() => new THREE.Vector3(), []);
+  const forward = useMemo(() => new THREE.Vector3(), []);
+  useFrame(({ camera, size }) => {
+    if (radiusKm > 0) lift.set(0, 1, 0).applyQuaternion(camera.quaternion).setLength(radiusKm);
+    else lift.set(0, 0, 0);
+    placeLabel(centerEl.current, lift, Boolean(centerLabel), camera, size, scratch, forward);
+    const sample = pose.current;
+    placeLabel(craftEl.current, sample?.pos ?? lift, Boolean(sample?.ok && objectLabel), camera, size, scratch, forward);
+  });
+  return null;
+}
+
 function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number; mode: CameraMode }) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as { target?: THREE.Vector3; update?: () => void } | null;
@@ -123,7 +229,7 @@ function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number;
     camera.up.set(0, 1, 0);
     camera.position.set(radius * 0.2, radius * 0.55, radius * 1.45);
     camera.near = 0.02;
-    camera.far = 1e8;
+    camera.far = Math.max(radius * 80, 1e8);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
     controls?.target?.set(0, 0, 0);
@@ -132,17 +238,37 @@ function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number;
   return null;
 }
 
-export function OrbitView({ arcs, selected, clock, fit, resetToken, cameraMode, onCameraMode }: OrbitProps) {
+export function OrbitView({
+  arcs,
+  selected,
+  clock,
+  fit,
+  centerName,
+  centerLabel,
+  objectLabel,
+  centerLabelEl,
+  objectLabelEl,
+  bodyRadiusKm,
+  resetToken,
+  cameraMode,
+  onCameraMode,
+}: OrbitProps) {
   const pose = useRef<CraftPose | null>(null);
   return (
     <Canvas
       className="stage"
       gl={{ antialias: true, logarithmicDepthBuffer: true, alpha: false }}
-      camera={{ fov: 42, position: [8, 24, 48], near: 0.02, far: 1e8 }}
+      camera={{ fov: 42, position: [8, 24, 48], near: 0.02, far: 1e10 }}
       dpr={[1, 2]}
     >
       <color attach="background" args={["#000000"]} />
-      <Earth />
+      {centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <SunSphere radiusKm={bodyRadiusKm} />
+      ) : bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <BodySphere radiusKm={bodyRadiusKm} />
+      ) : (
+        <OriginMark />
+      )}
       {arcs.map((arc) => (
         <ArcLine
           key={arc.segmentIndex}
@@ -152,17 +278,25 @@ export function OrbitView({ arcs, selected, clock, fit, resetToken, cameraMode, 
       ))}
       <CraftProbe clock={clock} pose={pose} />
       <Craft pose={pose} />
+      <SceneLabels
+        centerLabel={centerLabel}
+        objectLabel={objectLabel}
+        radiusKm={bodyRadiusKm ?? 0}
+        pose={pose}
+        centerEl={centerLabelEl}
+        craftEl={objectLabelEl}
+      />
       <OrbitControls
         makeDefault
         enabled
         enablePan={cameraMode === "overview"}
         enableDamping
         dampingFactor={0.08}
-        minDistance={cameraMode === "overview" ? 0.15 : 40}
+        minDistance={cameraMode !== "overview" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
         maxDistance={Math.max(fit, 16) * 30}
       />
       <CameraRig fit={fit} resetToken={resetToken} mode={cameraMode} />
-      <CameraDirector pose={pose} mode={cameraMode} onCameraMode={onCameraMode} />
+      <CameraDirector pose={pose} mode={cameraMode} bodyRadiusKm={bodyRadiusKm ?? 0} onCameraMode={onCameraMode} />
     </Canvas>
   );
 }

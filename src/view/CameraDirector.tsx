@@ -4,7 +4,6 @@ import type { MutableRefObject, RefObject } from "react";
 import * as THREE from "three";
 import type { CameraMode } from "./camera";
 import type { CraftPose } from "./craftPose";
-import { EARTH_RADIUS_KM } from "./craftPose";
 
 type Scratch = {
   pos: THREE.Vector3;
@@ -24,12 +23,13 @@ type OrbitHandle = { target: THREE.Vector3; update?: () => void };
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 6;
 const DRAG_PX = 6;
-/** Kilometers above the surface. The camera stops here instead of entering the Earth. */
+/** Kilometers above a drawn body. The camera stops here instead of entering the sphere. */
 const SURFACE_CLEARANCE_KM = 25;
 const surfacePoint = new THREE.Vector3();
 
-function stayOutsideEarth(camera: THREE.Camera, look: THREE.Vector3 | null) {
-  const limit = EARTH_RADIUS_KM + SURFACE_CLEARANCE_KM;
+function stayOutsideBody(camera: THREE.Camera, look: THREE.Vector3 | null, bodyRadiusKm: number) {
+  if (bodyRadiusKm <= 0) return;
+  const limit = bodyRadiusKm + SURFACE_CLEARANCE_KM;
   surfacePoint.copy(camera.position);
   const reach = surfacePoint.length();
   if (reach >= limit) return;
@@ -39,9 +39,11 @@ function stayOutsideEarth(camera: THREE.Camera, look: THREE.Vector3 | null) {
   if (look) camera.lookAt(look);
 }
 
-function followDistance(rangeKm: number): number {
-  const altitude = Math.max(rangeKm - EARTH_RADIUS_KM, 180);
-  return Math.min(Math.max(altitude * 2.2, 420), 8000);
+function followDistance(rangeKm: number, bodyRadiusKm: number): number {
+  const floor = bodyRadiusKm > 1000 ? 420 : 8;
+  const cap = bodyRadiusKm > 1000 ? 8000 : 400;
+  const altitude = Math.max(rangeKm - bodyRadiusKm, bodyRadiusKm > 0 ? 180 : 1);
+  return Math.min(Math.max(altitude * 2.2, floor), cap);
 }
 
 function flightFrame(bag: Scratch) {
@@ -63,19 +65,19 @@ function carry(camera: THREE.Camera, target: THREE.Vector3, next: THREE.Vector3,
   camera.lookAt(next);
 }
 
-function seedFollow(bag: Scratch, camera: THREE.Camera, target: THREE.Vector3) {
+function seedFollow(bag: Scratch, camera: THREE.Camera, target: THREE.Vector3, bodyRadiusKm: number) {
   flightFrame(bag);
-  const dist = followDistance(bag.pos.length());
+  const dist = followDistance(bag.pos.length(), bodyRadiusKm);
   camera.up.copy(bag.worldUp);
   target.copy(bag.pos);
   camera.position.copy(bag.pos).addScaledVector(bag.forward, -dist).addScaledVector(bag.camUp, dist * 0.42);
   camera.lookAt(bag.pos);
 }
 
-function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject<boolean>, zoom: number, target: THREE.Vector3) {
+function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject<boolean>, zoom: number, target: THREE.Vector3, bodyRadiusKm: number) {
   if (!anchored.current) {
     bag.anchor.copy(camera.position);
-    const min = followDistance(bag.pos.length()) * 1.6;
+    const min = followDistance(bag.pos.length(), bodyRadiusKm) * 1.6;
     if (bag.anchor.distanceTo(bag.pos) < min) {
       bag.forward.copy(bag.anchor).sub(bag.pos);
       if (bag.forward.lengthSq() < 1e-6) bag.forward.set(1, 0.45, 1);
@@ -93,10 +95,10 @@ function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject
   target.copy(bag.pos);
 }
 
-function placeCinematic(bag: Scratch, camera: THREE.Camera, elapsed: number, step: number, zoom: number, target: THREE.Vector3) {
+function placeCinematic(bag: Scratch, camera: THREE.Camera, elapsed: number, step: number, zoom: number, target: THREE.Vector3, bodyRadiusKm: number) {
   flightFrame(bag);
   camera.up.copy(bag.camUp);
-  const dist = followDistance(bag.pos.length());
+  const dist = followDistance(bag.pos.length(), bodyRadiusKm);
   const radius = dist * (1.35 + 0.28 * Math.sin(elapsed * 0.13));
   const angle = elapsed * 0.18;
   const lift = 0.22 + 0.38 * (0.5 + 0.5 * Math.sin(elapsed * 0.07));
@@ -123,10 +125,12 @@ function adoptZoom(camera: THREE.Camera, pivot: THREE.Vector3, zoom: MutableRefO
 export function CameraDirector({
   pose,
   mode,
+  bodyRadiusKm,
   onCameraMode,
 }: {
   pose: RefObject<CraftPose | null>;
   mode: CameraMode;
+  bodyRadiusKm: number;
   onCameraMode: (mode: CameraMode) => void;
 }) {
   const camera = useThree((state) => state.camera);
@@ -206,7 +210,7 @@ export function CameraDirector({
               carry(camera, look, bag.pos, bag.desired, bag.worldUp);
               keepView.current = false;
             } else {
-              seedFollow(bag, camera, look);
+              seedFollow(bag, camera, look, bodyRadiusKm);
               orbit?.update?.();
             }
             followReady.current = true;
@@ -216,12 +220,12 @@ export function CameraDirector({
         } else {
           adoptZoom(camera, look, zoom, applied);
           const step = 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
-          if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look);
-          else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look);
+          if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look, bodyRadiusKm);
+          else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look, bodyRadiusKm);
         }
       }
     }
-    stayOutsideEarth(camera, look);
+    stayOutsideBody(camera, look, bodyRadiusKm);
     if ((mode === "pov" || mode === "cinematic") && look) applied.current = camera.position.distanceTo(look);
   });
   return null;

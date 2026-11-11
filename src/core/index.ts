@@ -1,9 +1,11 @@
 export { parseOem, OemParseError, MAX_OEM_CHARS } from "./oem";
 export type { OemFile, OemSegment, StateSample, CovarianceBlock } from "./oem";
-export { stateAt, coverageSpan, liveSeconds, covers } from "./evaluate";
+export { stateAt, coverageSpan, liveSeconds, covers, segmentAtTime } from "./evaluate";
 export type { StateResult } from "./evaluate";
 export { toScene, fromScene } from "./scene";
 export { sourceToEme2000, supportedFrame, GCRS_TO_EME2000 } from "./frames";
+export { orbitCenter, centerKey, ORBIT_CENTERS } from "./centers";
+export type { OrbitCenter } from "./centers";
 export { radecEme2000 } from "./radec";
 export { LEAP_SOURCE } from "./time";
 export type { Failure } from "./types";

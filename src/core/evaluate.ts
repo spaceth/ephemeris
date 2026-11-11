@@ -7,6 +7,7 @@
  * segment. Nothing is extrapolated, and segments are never merged.
  */
 
+import { orbitCenter } from "./centers";
 import { supportedFrame, sourceToEme2000 } from "./frames";
 import { bracketIndex, interpolateComponent } from "./interpolate";
 import type { OemFile, OemSegment } from "./oem";
@@ -21,11 +22,11 @@ export type StateOk = {
   sourceEpoch: string | null;
   positionM: Vec3;
   velocityMps: Vec3;
-  /** Geocentric position in EME2000 meters. Null when the frame or center cannot be placed there. */
+  /** Center-relative position in EME2000 meters. Geocentric only when the center is Earth. Null outside the frame and center profile. */
   eme2000PositionM: Vec3 | null;
-  /** Geocentric right ascension in EME2000, radians. Null on the celestial pole. */
+  /** Right ascension of the center-relative EME2000 vector, radians. Null on the celestial pole. */
   raRad: number | null;
-  /** Geocentric declination in EME2000, radians. Null when the position cannot be placed in EME2000. */
+  /** Declination of the center-relative EME2000 vector, radians. Null when the position cannot be placed in EME2000. */
   decRad: number | null;
   interpolationLabel: string;
   viewerDefault: boolean;
@@ -62,6 +63,25 @@ export function liveSeconds(oem: OemFile, now: Date): number | null {
 
 export function covers(segment: OemSegment, t: number): boolean {
   return segment.evalStart != null && segment.evalStop != null && t >= segment.evalStart - EXACT && t <= segment.evalStop + EXACT;
+}
+
+/**
+ * Segment the clock should show. The current segment stays while it still
+ * covers t, including a shared boundary. Otherwise the covering segment that
+ * started latest is used. A gap keeps the current segment.
+ */
+export function segmentAtTime(oem: OemFile, t: number, current: number): number {
+  const covering = oem.segments.filter((segment) => covers(segment, t));
+  if (covering.some((segment) => segment.index === current)) return current;
+  if (covering.length === 0) return oem.segments[current] ? current : 0;
+  let chosen = covering[0];
+  for (let i = 1; i < covering.length; i += 1) {
+    const segment = covering[i];
+    const start = segment.evalStart ?? Number.NEGATIVE_INFINITY;
+    const chosenStart = chosen.evalStart ?? Number.NEGATIVE_INFINITY;
+    if (start > chosenStart || (start === chosenStart && segment.index > chosen.index)) chosen = segment;
+  }
+  return chosen.index;
 }
 
 export function stateAt(oem: OemFile, t: number, segmentIndex?: number): StateResult {
@@ -133,8 +153,8 @@ function finish(
   const position = positionM ?? (sample ? sample.positionM : segment.samples[0].positionM);
   const velocity = velocityMps ?? (sample ? sample.velocityMps : segment.samples[0].velocityMps);
   const frame = supportedFrame(segment.refFrame);
-  const earth = segment.centerName.toUpperCase() === "EARTH";
-  const eme2000PositionM = frame && earth ? sourceToEme2000(frame, position) : null;
+  const center = orbitCenter(segment.centerName);
+  const eme2000PositionM = frame && center ? sourceToEme2000(frame, position) : null;
   const angles = eme2000PositionM ? radecEme2000(eme2000PositionM) : null;
   return {
     ok: true,

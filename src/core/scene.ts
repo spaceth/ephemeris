@@ -1,6 +1,7 @@
 /**
  * Scene axes are Y-up. Science axes are EME2000: Z toward the pole,
  * X toward the equinox, Y completing a right-handed set.
+ * The origin is the segment center, not a shared solar-system origin.
  *
  * Meters map to scene kilometers:
  *   (X, Y, Z) → (X, Z, −Y) × 10⁻³

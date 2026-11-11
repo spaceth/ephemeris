@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import { coverageSpan, liveSeconds } from "./core";
+import { coverageSpan, liveSeconds, segmentAtTime } from "./core";
 import type { OemFile } from "./core";
 import type { ArcBuffer, WorkerResponse } from "./session";
 import type { SceneClock } from "./view/types";
@@ -10,6 +10,8 @@ const MAX_BYTES = 32 * 1024 * 1024;
 export const EXAMPLES = [
   { id: "EM2", label: "EM-2", path: "/sample/EM2.oem", fileName: "EM2.oem" },
   { id: "ISS", label: "ISS", path: "/sample/ISS.OEM_J2K_EPH.txt", fileName: "ISS.OEM_J2K_EPH.txt" },
+  { id: "DART", label: "DART", path: "/sample/dart_2021_328_2022_091_rec_v01.oem", fileName: "dart_2021_328_2022_091_rec_v01.oem" },
+  { id: "CE7", label: "CE7", path: "/sample/CE7_Trajectory_2027.oem", fileName: "CE7_Trajectory_2027.oem" },
 ] as const;
 
 function webglAvailable(): boolean {
@@ -61,12 +63,22 @@ export function useEphemeris() {
   clockRef.current.segment = segment;
   if (!playingRef.current) clockRef.current.t = t;
 
+  const syncSegment = useCallback((at: number) => {
+    const current = fileRef.current;
+    if (!current) return;
+    const next = segmentAtTime(current, at, clockRef.current.segment);
+    if (next === clockRef.current.segment) return;
+    clockRef.current.segment = next;
+    setSegment(next);
+  }, []);
+
   const seek = useCallback((next: number) => {
     const coverage = fileRef.current ? coverageSpan(fileRef.current) : null;
     const value = coverage ? Math.min(coverage.stop, Math.max(coverage.start, next)) : next;
     clockRef.current.t = value;
+    syncSegment(value);
     setT(value);
-  }, []);
+  }, [syncSegment]);
 
   const nudge = useCallback((seconds: number) => {
     seek(clockRef.current.t + seconds);
@@ -208,14 +220,16 @@ export function useEphemeris() {
       if (message.type === "parsed") {
         if (message.id !== parseId.current) return;
         const start = coverageSpan(message.file)?.start ?? 0;
+        const nextSegment = segmentAtTime(message.file, start, 0);
         playingRef.current = false;
         clockRef.current.t = start;
+        clockRef.current.segment = nextSegment;
         setLoading(false);
         setError(null);
         setFile(message.file);
         setArcs(message.arcs);
         setFileName(message.name);
-        setSegment(0);
+        setSegment(nextSegment);
         setPlaying(false);
         setT(start);
       } else if (message.type === "parse-error") {
@@ -248,6 +262,7 @@ export function useEphemeris() {
           setPlaying(false);
         }
         clockRef.current.t = next;
+        syncSegment(next);
         if (!playingRef.current || stamp - painted > 40) {
           painted = stamp;
           setT(next);
@@ -257,7 +272,7 @@ export function useEphemeris() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [file]);
+  }, [file, syncSegment]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -299,7 +314,6 @@ export function useEphemeris() {
     dragOver,
     t,
     segment,
-    setSegment,
     playing,
     speed,
     setSpeed,
