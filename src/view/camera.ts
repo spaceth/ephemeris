@@ -1,5 +1,6 @@
 export const CAMERA_MODES = [
   { id: "overview", label: "Overview" },
+  { id: "system", label: "System" },
   { id: "follow", label: "Follow" },
   { id: "pov", label: "PoV" },
   { id: "cinematic", label: "Cinematic" },

@@ -3,6 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { earthEpochs, earthScene, moonScene, sunScene } from "../core";
+import { ephemerisSunScene } from "../core/ephemeris/sunLight";
+import type { NaifId } from "../core/ephemeris/state";
 import type { Mat3 } from "../core";
 import type { SceneClock } from "./types";
 
@@ -123,13 +125,14 @@ void main() {
 const AIR_FRAG = /* glsl */ `
 #include <logdepthbuf_pars_fragment>
 uniform vec3 sunDirection;
+uniform vec3 bodyCenter;
 uniform float innerRadius;
 uniform float outerRadius;
 varying vec3 vViewPos;
 varying vec3 vNormalW;
 void main() {
   vec3 dir = normalize(vViewPos);
-  vec3 center = (viewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vec3 center = (viewMatrix * vec4(bodyCenter, 1.0)).xyz;
   float along = dot(center, dir);
   float dist = sqrt(max(dot(center, center) - along * along, 0.0));
   float span = max(outerRadius - innerRadius, 1.0);
@@ -147,6 +150,8 @@ void main() {
 type BodyProps = {
   radiusKm: number;
   clock: { current: SceneClock };
+  /** NAIF id of this body, when the planetary snapshot can light it. */
+  bodyId?: NaifId;
 };
 
 function litMaterial(map: THREE.Texture, textured: boolean): THREE.ShaderMaterial {
@@ -165,6 +170,7 @@ function litMaterial(map: THREE.Texture, textured: boolean): THREE.ShaderMateria
 function LitSphere({
   radiusKm,
   clock,
+  bodyId,
   map,
   axes,
   textured,
@@ -193,7 +199,8 @@ function LitSphere({
       return;
     }
     const { jdTt } = earthEpochs(origin, clock.current.t);
-    const direction = sunScene(jdTt);
+    const placed = bodyId == null ? null : ephemerisSunScene(bodyId, origin, clock.current.t);
+    const direction = placed ?? sunScene(jdTt);
     sun.set(direction[0], direction[1], direction[2]);
     if (!axes || !body) return;
     const rows = axes(jdTt);
@@ -234,7 +241,7 @@ export function MoonBody(props: BodyProps) {
   useLayoutEffect(() => {
     configureMap(map, gl);
   }, [gl, map]);
-  return <LitSphere {...props} map={map} axes={moonScene} textured />;
+  return <LitSphere {...props} bodyId={props.bodyId ?? 301} map={map} axes={moonScene} textured />;
 }
 
 function configureMap(map: THREE.Texture, gl: THREE.WebGLRenderer) {
@@ -272,6 +279,7 @@ export function EarthBody({ radiusKm, clock, clouds }: BodyProps & { clouds: boo
       new THREE.ShaderMaterial({
         uniforms: {
           sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+          bodyCenter: { value: new THREE.Vector3() },
           innerRadius: { value: radiusKm },
           outerRadius: { value: radiusKm * AIR_SCALE },
         },
@@ -314,10 +322,13 @@ export function EarthBody({ radiusKm, clock, clouds }: BodyProps & { clouds: boo
       return;
     }
     const { jdUt1, jdTt } = earthEpochs(origin, clock.current.t);
-    const direction = sunScene(jdTt);
+    const placed = ephemerisSunScene(399, origin, clock.current.t);
+    const direction = placed ?? sunScene(jdTt);
     sun.set(direction[0], direction[1], direction[2]);
     airSun.copy(sun);
     if (!body) return;
+    body.updateWorldMatrix(true, false);
+    (atmosphere.uniforms.bodyCenter.value as THREE.Vector3).setFromMatrixPosition(body.matrixWorld);
     const rows = earthScene(jdUt1, jdTt);
     body.matrix.set(
       rows[0], rows[1], rows[2], 0,

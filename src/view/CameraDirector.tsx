@@ -25,18 +25,37 @@ const ZOOM_MAX = 6;
 const DRAG_PX = 6;
 /** Kilometers above a drawn body. The camera stops here instead of entering the sphere. */
 const SURFACE_CLEARANCE_KM = 25;
-const surfacePoint = new THREE.Vector3();
+const obstacleOffset = new THREE.Vector3();
+
+export type SphereObstacle = { position: THREE.Vector3; radiusKm: number };
 
 function stayOutsideBody(camera: THREE.Camera, look: THREE.Vector3 | null, bodyRadiusKm: number) {
+  pushOutside(camera, look, obstacleOffset.copy(camera.position), bodyRadiusKm);
+}
+
+function pushOutside(camera: THREE.Camera, look: THREE.Vector3 | null, offset: THREE.Vector3, bodyRadiusKm: number) {
   if (bodyRadiusKm <= 0) return;
   const limit = bodyRadiusKm + SURFACE_CLEARANCE_KM;
-  surfacePoint.copy(camera.position);
-  const reach = surfacePoint.length();
+  const reach = offset.length();
   if (reach >= limit) return;
-  if (reach < 1e-3) surfacePoint.set(0, 1, 0);
-  surfacePoint.setLength(limit);
-  camera.position.copy(surfacePoint);
+  if (reach < 1e-3) offset.set(0, 1, 0);
+  offset.setLength(limit);
+  camera.position.copy(offset);
   if (look) camera.lookAt(look);
+}
+
+function stayOutsideObstacles(camera: THREE.Camera, look: THREE.Vector3 | null, obstacles: readonly SphereObstacle[]) {
+  for (const obstacle of obstacles) {
+    if (obstacle.radiusKm <= 0) continue;
+    obstacleOffset.copy(camera.position).sub(obstacle.position);
+    const limit = obstacle.radiusKm + SURFACE_CLEARANCE_KM;
+    const reach = obstacleOffset.length();
+    if (reach >= limit) continue;
+    if (reach < 1e-3) obstacleOffset.set(0, 1, 0);
+    obstacleOffset.setLength(limit);
+    camera.position.copy(obstacle.position).add(obstacleOffset);
+    if (look) camera.lookAt(look);
+  }
 }
 
 function followDistance(rangeKm: number, bodyRadiusKm: number): number {
@@ -126,11 +145,14 @@ export function CameraDirector({
   pose,
   mode,
   bodyRadiusKm,
+  obstacles,
   onCameraMode,
 }: {
   pose: RefObject<CraftPose | null>;
   mode: CameraMode;
   bodyRadiusKm: number;
+  /** Neighbor bodies. The origin body is handled with `bodyRadiusKm`. */
+  obstacles: RefObject<readonly SphereObstacle[]>;
   onCameraMode: (mode: CameraMode) => void;
 }) {
   const camera = useThree((state) => state.camera);
@@ -197,7 +219,7 @@ export function CameraDirector({
     }
     const orbit = controls;
     const look = orbit?.target ?? null;
-    if (mode !== "overview") {
+    if (mode !== "overview" && mode !== "system") {
       const sample = pose.current;
       if (sample?.ok && look) {
         bag.pos.copy(sample.pos);
@@ -226,6 +248,7 @@ export function CameraDirector({
       }
     }
     stayOutsideBody(camera, look, bodyRadiusKm);
+    stayOutsideObstacles(camera, look, obstacles.current ?? []);
     if ((mode === "pov" || mode === "cinematic") && look) applied.current = camera.position.distanceTo(look);
   });
   return null;

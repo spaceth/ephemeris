@@ -79,7 +79,7 @@ export type OemFile = {
   covariances: CovarianceBlock[];
   warnings: string[];
   origin: TaiOrigin | null;
-  format: "kvn" | "xml";
+  format: "kvn" | "xml" | "spk";
 };
 
 const NUM = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;

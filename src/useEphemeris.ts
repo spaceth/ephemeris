@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { coverageSpan, liveSeconds, segmentAtTime } from "./core";
+import { bindCraft } from "./core/ephemeris/craft";
 import type { OemFile } from "./core";
 import type { ArcBuffer, WorkerResponse } from "./session";
 import type { SceneClock } from "./view/types";
@@ -24,15 +25,6 @@ function webglAvailable(): boolean {
   }
 }
 
-function readFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Could not read that file"));
-    reader.readAsText(file);
-  });
-}
-
 export function useEphemeris() {
   const workerRef = useRef<Worker | null>(null);
   const parseId = useRef(0);
@@ -41,6 +33,7 @@ export function useEphemeris() {
   const speedRef = useRef(1);
   const clockRef = useRef<SceneClock>({ file: null, t: 0, segment: 0 });
   const dragDepth = useRef(0);
+  const spkBuffers = useRef(new Map<number, ArrayBuffer>());
 
   const [file, setFile] = useState<OemFile | null>(null);
   const [arcs, setArcs] = useState<ArcBuffer[]>([]);
@@ -143,6 +136,19 @@ export function useEphemeris() {
     workerRef.current.postMessage({ type: "parse", id, text, name });
   }, []);
 
+  const submitSpk = useCallback((buffer: ArrayBuffer, name: string) => {
+    if (!workerRef.current) {
+      setLoading(false);
+      setError("The parser is not ready. Reload the page and try again.");
+      return;
+    }
+    const id = ++parseId.current;
+    spkBuffers.current.set(id, buffer);
+    setLoading(true);
+    setError(null);
+    workerRef.current.postMessage({ type: "parse-spk", id, name, buffer });
+  }, []);
+
   const ingest = useCallback(async (picked: File) => {
     if (picked.size > MAX_BYTES) {
       setError("File is larger than 50 MB.");
@@ -151,12 +157,15 @@ export function useEphemeris() {
     setLoading(true);
     setError(null);
     try {
-      submit(await readFile(picked), picked.name || "ephemeris.oem");
+      const bytes = await picked.arrayBuffer();
+      const magic = String.fromCharCode(...new Uint8Array(bytes, 0, Math.min(8, bytes.byteLength)));
+      if (magic.startsWith("DAF/SPK")) submitSpk(bytes, picked.name || "ephemeris.bsp");
+      else submit(new TextDecoder().decode(bytes), picked.name || "ephemeris.oem");
     } catch (reason) {
       setLoading(false);
       setError(reason instanceof Error ? reason.message : "Could not read that file");
     }
-  }, [submit]);
+  }, [submit, submitSpk]);
 
   const onPick = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0];
@@ -220,6 +229,11 @@ export function useEphemeris() {
       const message = event.data;
       if (message.type === "parsed") {
         if (message.id !== parseId.current) return;
+        const pending = spkBuffers.current.get(message.id);
+        if (pending) {
+          bindCraft(message.file, pending);
+          spkBuffers.current.delete(message.id);
+        }
         const start = coverageSpan(message.file)?.start ?? 0;
         const nextSegment = segmentAtTime(message.file, start, 0);
         playingRef.current = false;

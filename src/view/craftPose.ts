@@ -1,4 +1,4 @@
-import { stateAt } from "../core/evaluate";
+import { displayedState } from "../core/ephemeris/craft";
 import { sourceToEme2000, supportedFrame } from "../core/frames";
 import { toScene } from "../core/scene";
 import type { SceneClock } from "./types";
@@ -10,14 +10,19 @@ export type CraftPose = {
   vel: Vector3;
 };
 
-/** One evaluation of the spacecraft, written into the shared pose. */
+/**
+ * One evaluation of the spacecraft, written into the shared pose.
+ * `vel` is the EME2000 velocity in scene axes. The follow camera may use it
+ * as an offset. It is not spacecraft attitude. No attitude quaternion is
+ * applied; the marker stays a screen-space point.
+ */
 export function readCraft(clock: { current: SceneClock }, pose: CraftPose): boolean {
   const file = clock.current.file;
   if (!file) {
     pose.ok = false;
     return false;
   }
-  const state = stateAt(file, clock.current.t, clock.current.segment);
+  const state = displayedState(file, clock.current.t, clock.current.segment);
   if (!state.ok || !state.eme2000PositionM) {
     pose.ok = false;
     return false;

@@ -1,18 +1,22 @@
 /**
  * Earth attitude and the Sun, both in EME2000.
  *
- * The crust orientation is the IAU 1976 precession (Lieske) from the mean
- * equator of date back to J2000.0, times the IAU 1982 Greenwich mean
- * sidereal time. At J2000.0 the precession is the identity, so the result
- * is the mean equator and equinox of J2000.0 rather than the GCRS.
- * UT1 is taken as UTC. Polar motion, DUT1, and nutation are left out:
- * together they move the surface by well under one pixel of the Earth map.
+ * The crust uses the equinox path in `orientation.ts`: IAU 2006 precession,
+ * IAU 2000B nutation, and the Greenwich sidereal angle. UT1 is the file's
+ * UTC, so that status is approximate. Polar motion is unavailable without a
+ * bulletin and is not replaced by zero. `gmst` below is the older IAU 1982
+ * series and is not the crust rotation.
  *
- * The Sun is a low-precision geocentric direction in the mean equator of
- * date, precessed back to EME2000. It is accurate to about 0.01°, which
- * is enough to place the day/night terminator.
+ * The Moon keeps the IAU libration series in this file. That series is its
+ * own model, not a planetary constants kernel.
+ *
+ * The Sun fallback is a low-precision geocentric direction in the mean
+ * equator of date, precessed back to EME2000. It is accurate to about 0.01°,
+ * which is enough to place the day/night terminator until the snapshot loads.
  */
 
+import { earthAttitude } from "./ephemeris/orientation";
+import type { EopStatus } from "./ephemeris/orientation";
 import { DAYSEC, taiFromSeconds, taiutc, type TaiOrigin } from "./time";
 
 const J2000 = 2451545.0;
@@ -103,10 +107,9 @@ function precessionJ2000ToDate(jdTt: number): Mat3 {
   return mul(mul(r3(-z), r2(theta)), r3(-zeta));
 }
 
-/** ITRF column vector into EME2000. Ignores polar motion. */
+/** ITRF column vector into EME2000. Polar motion is omitted; see `earthAttitude`. */
 export function earthEmeFromItrf(jdUt1: number, jdTt: number): Mat3 {
-  const spin = r3(-gmst(jdUt1));
-  return mul(transpose(precessionJ2000ToDate(jdTt)), spin);
+  return earthAttitude(jdUt1, jdTt).itrfToEme2000;
 }
 
 /**
@@ -149,7 +152,7 @@ function r1(phi: number): Mat3 {
 /**
  * IAU north pole and prime meridian of the Moon, in EME2000.
  * The series is the IAU working-group model: the secular pole plus the
- * libration terms in E1–E13. d is days and T is centuries from J2000.0 TT.
+ * libration terms in E1–E13. It is not a PCK. d is days and T is centuries from J2000.0 TT.
  * The returned matrix sends the body frame (X prime meridian, Y east, Z north)
  * into EME2000.
  */
@@ -226,12 +229,22 @@ export function sunScene(jdTt: number): [number, number, number] {
   return [x, z, -y];
 }
 
-/** UT1 (as UTC) and TT Julian dates for a TAI offset from the file origin. */
-export function earthEpochs(origin: TaiOrigin, taiSeconds: number): { jdUt1: number; jdTt: number } {
+/**
+ * UT1 stand-in (the file UTC) and TT for a TAI offset from the file origin.
+ * `ut1` is approximate because no bulletin supplies UT1−UTC. Polar motion is unavailable.
+ */
+export function earthEpochs(origin: TaiOrigin, taiSeconds: number): {
+  jdUt1: number;
+  jdTt: number;
+  ut1: EopStatus;
+  polarMotion: EopStatus;
+} {
   const tai = taiFromSeconds(origin, taiSeconds);
   const utc = taiutc(tai.tai1, tai.tai2);
   return {
     jdUt1: utc.utc1 + utc.utc2,
     jdTt: tai.tai1 + tai.tai2 + TT_MINUS_TAI / DAYSEC,
+    ut1: "approximate",
+    polarMotion: "unavailable",
   };
 }

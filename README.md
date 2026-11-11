@@ -56,9 +56,25 @@ There is no extrapolation and no SGP4. An exact sample epoch returns the stored 
 
 The working axes are EME2000. The scene origin is the center of the segment being shown. An EME2000 file is used as stored. A GCRF or ICRF file is treated as GCRS and rotated by the IAU 2006 frame bias frozen at J2000.0. ICRF uses the same axes as GCRF in this profile. That bias is the constant matrix in `src/core/frames.ts`.
 
-Scene axes are Y-up. A science vector in meters becomes `(X, Z, −Y)` in kilometers. The Sun is an untextured sphere of the IAU nominal solar radius. Moon, Pluto, and the planets are gray spheres of a published equatorial radius (Earth uses WGS84). A sphere is not rotated, because it has no longitude. Barycenters, Lagrange points, and the listed small bodies are an origin mark. The center and the spacecraft each carry a white label.
+Scene axes are Y-up. A science vector in meters becomes `(X, Z, −Y)` in kilometers. The Sun is an untextured sphere of the IAU nominal solar radius. In the minimal style, the Moon and the planets are gray spheres of a published equatorial radius (Earth uses WGS84). Barycenters, Lagrange points, and the listed small bodies are an origin mark. The center and the spacecraft each carry a white label.
+
+Realistic Earth uses the day, night, and cloud maps already in `public/textures`. The Moon uses the NASA Scientific Visualization Studio CGI Moon Kit color map, a US government work. The star shell is XHIP to magnitude 6 (Anderson & Francis 2012, via d3-celestial): J2000 directions only, with no proper motion, parallax, or aberration. The lens flare is the CC0 shader credited in `src/view/SunFlare.tsx`. Neighbor bodies occlude it. No further body maps are added.
 
 Right ascension and declination are the direction of that center-relative EME2000 vector. They are geocentric only when the center is Earth. There is no light-time, aberration, refraction, or apparent place. Right ascension is undefined on the celestial pole and at the origin. They are not drawn as a sky plot.
+
+## Planetary snapshot and spacecraft kernels
+
+A local file whose first bytes are `DAF/SPK` is read in the browser, with the same 50 MB cap, and is not uploaded. Supported SPK types are 2, 3, 8, 9, 12, and 13 in NAIF frame 1. Frame 1 on DE440 is ICRF. EME2000 applies the frame bias once, outside the Chebyshev evaluation. An unsupported type or frame stays in the segment list and is not drawn, and an earlier segment is not substituted for it. Types 8 and 9 interpolate each state component with Lagrange. Types 12 and 13 use Hermite on position and velocity. The OEM interpolator is not used as a stand-in.
+
+The reduced kernel `public/ephemeris/de440-earth-moon-sun.bsp` holds native DE440 type 2 coefficients for the Earth–Moon barycenter, the Sun, the Moon, and the Earth from 1950 to 2050, cut on source interval boundaries. Its manifest records the source URL, checksums, and the `EMRAT` taken from `gm_de440.tpc`. The page fetches that file when a neighbor or an ephemeris Sun direction is needed. It is not in the JavaScript bundle. From Earth the Moon is shown, from the Moon the Earth is shown, and from the Sun or a barycenter the Sun is shown. Trajectory framing stays the overview. System framing is a separate camera mode.
+
+SPK evaluation uses TDB seconds past J2000. The file clock remains TAI. `TDB` is taken equal to `TT` (`TT = TAI + 32.184 s`) and that state is marked approximate. UTC before 1972-01-01 is rejected. There is no light-time or aberration.
+
+Same-kernel CSPICE N0067 checks, aberration `NONE`, are in `tests/ephemeris-cspice.test.ts` and `tests/ephemeris-discrete.test.ts`. On the committed Earth–Moon–Sun snapshot the position residual is under `2e-5` m and the velocity residual is under `1e-10` m/s. On the type 8/9/12/13 fixture both are under `1e-6` m and `1e-9` m/s. Those checks are not a Horizons comparison.
+
+## Earth orientation
+
+The Earth crust uses one equinox chain: IAU 2006 precession, IAU 2000B nutation, and the Greenwich sidereal angle. It does not use the Earth rotation angle. UT1 is the file UTC, so that status is approximate. No Earth-orientation bulletin is bundled, polar motion is unavailable, and it is not filled with zeros. The Moon keeps its IAU libration series, labeled as that model rather than a planetary constants kernel. Measured EOP is not claimed for 1950–2050.
 
 ## Reference data
 

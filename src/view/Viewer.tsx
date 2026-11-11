@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { covers, liveSeconds, orbitCenter, stateAt } from "../core";
+import { covers, liveSeconds, orbitCenter } from "../core";
+import { displayedState } from "../core/ephemeris/craft";
 import { arcsForCenter } from "../session";
 import type { EphemerisSession } from "../useEphemeris";
 import { Clock } from "./Clock";
@@ -56,6 +57,10 @@ export function Viewer({
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
   const objectLabelEl = useRef<HTMLSpanElement>(null);
+  const neighborA = useRef<HTMLSpanElement>(null);
+  const neighborB = useRef<HTMLSpanElement>(null);
+  const neighborC = useRef<HTMLSpanElement>(null);
+  const neighborLabelEls = useMemo(() => [neighborA, neighborB, neighborC], []);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 720px)");
@@ -76,7 +81,7 @@ export function Viewer({
   if (!file) return null;
 
   const utc = formatEpoch(file, session.t);
-  const state = stateAt(file, session.t, session.segment);
+  const state = displayedState(file, session.t, session.segment);
   const liveAt = liveSeconds(file, session.now);
   const showingLive = liveAt != null && Math.abs(session.t - liveAt) <= LIVE_WINDOW;
   const covering = file.segments.filter((item) => covers(item, session.t));
@@ -111,6 +116,7 @@ export function Viewer({
               resetToken={session.resetToken}
               cameraMode={cameraMode}
               onCameraMode={setCameraMode}
+              neighborLabelEls={neighborLabelEls}
             />
           </Suspense>
         ) : (
@@ -122,6 +128,9 @@ export function Viewer({
         <span ref={objectLabelEl} className="scene-label">
           {shown?.objectName ?? ""}
         </span>
+        <span ref={neighborA} className="scene-label" />
+        <span ref={neighborB} className="scene-label" />
+        <span ref={neighborC} className="scene-label" />
       </div>
       {viewing && !state.ok && <p className="banner">{state.message}</p>}
       {!viewing && (

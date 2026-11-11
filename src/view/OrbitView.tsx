@@ -8,6 +8,8 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
+import type { SphereObstacle } from "./CameraDirector";
+import { Neighbors } from "./Neighbors";
 import { EarthBody, LitBody, MoonBody, SunBody } from "./Globe";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
@@ -56,6 +58,8 @@ type OrbitProps = {
   resetToken: number;
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
+  /** Names for the snapshot neighbors. Unused slots stay hidden. */
+  neighborLabelEls: RefObject<HTMLSpanElement | null>[];
 };
 
 /** Coverage falloff across the screen-space strip, so the arc edge blends out. */
@@ -380,10 +384,22 @@ function SceneLabels({
   return null;
 }
 
-function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number; mode: CameraMode }) {
+function CameraRig({
+  fit,
+  reach,
+  resetToken,
+  mode,
+}: {
+  fit: number;
+  reach: RefObject<number>;
+  resetToken: number;
+  mode: CameraMode;
+}) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as { target?: THREE.Vector3; update?: () => void } | null;
+  const systemPlaced = useRef(false);
   useEffect(() => {
+    systemPlaced.current = false;
     if (mode !== "overview") return;
     const radius = Math.max(fit, 16);
     camera.up.set(0, 1, 0);
@@ -395,6 +411,19 @@ function CameraRig({ fit, resetToken, mode }: { fit: number; resetToken: number;
     controls?.target?.set(0, 0, 0);
     controls?.update?.();
   }, [camera, controls, fit, mode, resetToken]);
+  useFrame(() => {
+    if (mode !== "system" || systemPlaced.current || reach.current <= 0) return;
+    const radius = Math.max(reach.current, 16);
+    camera.up.set(0, 1, 0);
+    camera.position.set(radius * 0.2, radius * 0.55, radius * 1.45);
+    camera.near = 0.02;
+    camera.far = Math.max(radius * 8, 1e9);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    controls?.target?.set(0, 0, 0);
+    controls?.update?.();
+    systemPlaced.current = true;
+  });
   return null;
 }
 
@@ -419,8 +448,11 @@ export function OrbitView({
   resetToken,
   cameraMode,
   onCameraMode,
+  neighborLabelEls,
 }: OrbitProps) {
   const pose = useRef<CraftPose | null>(null);
+  const obstacles = useRef<SphereObstacle[]>([]);
+  const reach = useRef(0);
   return (
     <Canvas
       className="stage"
@@ -446,6 +478,16 @@ export function OrbitView({
       ) : (
         <OriginMark />
       )}
+      <Neighbors
+        clock={clock}
+        centerName={centerName}
+        realistic={realistic}
+        clouds={clouds}
+        showNames={showBodyName}
+        obstacles={obstacles}
+        reach={reach}
+        labelEls={neighborLabelEls}
+      />
       {trajectoryLine !== "hidden" && arcs.map((arc) => (
         <ArcLine
           key={arc.segmentIndex}
@@ -462,14 +504,20 @@ export function OrbitView({
       <OrbitControls
         makeDefault
         enabled
-        enablePan={cameraMode === "overview"}
+        enablePan={cameraMode === "overview" || cameraMode === "system"}
         enableDamping
         dampingFactor={0.08}
-        minDistance={cameraMode !== "overview" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
-        maxDistance={Math.max(fit, 16) * 30}
+        minDistance={cameraMode !== "overview" && cameraMode !== "system" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
+        maxDistance={cameraMode === "system" ? 1e9 : Math.max(fit, 16) * 30}
       />
-      <CameraRig fit={fit} resetToken={resetToken} mode={cameraMode} />
-      <CameraDirector pose={pose} mode={cameraMode} bodyRadiusKm={bodyRadiusKm ?? 0} onCameraMode={onCameraMode} />
+      <CameraRig fit={fit} reach={reach} resetToken={resetToken} mode={cameraMode} />
+      <CameraDirector
+        pose={pose}
+        mode={cameraMode}
+        bodyRadiusKm={bodyRadiusKm ?? 0}
+        obstacles={obstacles}
+        onCameraMode={onCameraMode}
+      />
       <SceneLabels
         centerLabel={centerLabel}
         objectLabel={objectLabel}

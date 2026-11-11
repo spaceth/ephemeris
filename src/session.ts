@@ -1,4 +1,4 @@
-import { orbitCenter } from "./core/centers";
+import { centerKey, orbitCenter } from "./core/centers";
 import { sourceToEme2000, supportedFrame } from "./core/frames";
 import type { SupportedFrame } from "./core/frames";
 import { bracketIndex, interpolateComponent } from "./core/interpolate";
@@ -14,7 +14,9 @@ export type ArcBuffer = {
   times: Float32Array;
 };
 
-export type WorkerRequest = { type: "parse"; id: number; text: string; name: string };
+export type WorkerRequest =
+  | { type: "parse"; id: number; text: string; name: string }
+  | { type: "parse-spk"; id: number; name: string; buffer: ArrayBuffer };
 
 export type WorkerResponse =
   | { type: "parsed"; id: number; name: string; file: OemFile; arcs: ArcBuffer[] }
@@ -35,14 +37,20 @@ type Curve = {
   vel: [number[], number[], number[]];
 };
 
+function sameCenter(a: string, b: string): boolean {
+  const left = orbitCenter(a);
+  const right = orbitCenter(b);
+  if (left && right) return left.name === right.name;
+  return centerKey(a) === centerKey(b);
+}
+
 /** Arcs that share the selected segment's center. Different centers are different origins and are not drawn together. */
 export function arcsForCenter(file: OemFile, arcs: ArcBuffer[], segmentIndex: number): ArcBuffer[] {
   const selected = file.segments[segmentIndex];
-  const center = selected ? orbitCenter(selected.centerName) : null;
-  if (!center) return [];
+  if (!selected) return [];
   return arcs.filter((arc) => {
     const segment = file.segments[arc.segmentIndex];
-    return segment != null && orbitCenter(segment.centerName)?.name === center.name;
+    return segment != null && sameCenter(segment.centerName, selected.centerName);
   });
 }
 

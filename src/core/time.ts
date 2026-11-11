@@ -3,10 +3,20 @@
  * (eraDat, eraDtf2d, eraUtctai, eraTaiutc, eraD2dtf).
  * JavaScript Date is not used as the scientific epoch.
  *
+ * The application clock is TAI. `TaiOrigin` is a split TAI Julian Date:
+ * the absolute instant is `tai1 + tai2` in Julian days. An OEM file's
+ * sample field `t` is TAI seconds from that origin. `finalizeTimes` sets
+ * the origin to the first UTC sample. Those seconds are not seconds past
+ * J2000. SPK evaluation uses TDB seconds past J2000 from
+ * `tdbSecondsPastJ2000`, which is a separate conversion.
+ *
  * Leap seconds: IERS leap-seconds.list retrieved 2026-11-11.
  * The file expires 2027-06-28. TAI−UTC = 37 s from 2017-01-01.
  * No leap second is recorded after that date. Instants after the expiry
  * still use 37 s and are flagged dubious.
+ *
+ * UTC before 1972-01-01 is rejected. The modern integer leap-second table
+ * is not applied to the 1961–1971 rate-offset form of UTC.
  */
 
 export const DAYSEC = 86400;
@@ -348,6 +358,7 @@ export function formatUtcJd(utc1: number, utc2: number, ndp = 3): { text: string
   return { text, dubious: dat0.dubious || dat24.dubious };
 }
 
+/** Split TAI Julian Date. The instant is `tai1 + tai2` in Julian days. */
 export type TaiOrigin = { tai1: number; tai2: number };
 
 export function taiSecondsBetween(
