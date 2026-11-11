@@ -21,6 +21,8 @@ import {
   starPointSize,
   starScene,
   sunEme2000,
+  moonEmeFromBody,
+  moonScene,
   toScene,
 } from "../src/core";
 import { hermiteCubic } from "../src/core/interpolate";
@@ -766,5 +768,98 @@ describe("XHIP stars", () => {
     expect(sirius?.[0]).toBeCloseTo(101.2872, 3);
     expect(sirius?.[1]).toBeCloseTo(-16.7161, 3);
     expect(sky.stars.every((star) => star[2] <= 6)).toBe(true);
+  });
+});
+
+describe("moon in EME2000", () => {
+  const J2000 = 2451545.0;
+  const DEG = Math.PI / 180;
+
+  function column(m: readonly number[], index: number): [number, number, number] {
+    return [m[index], m[3 + index], m[6 + index]];
+  }
+
+  function apply(m: readonly number[], v: readonly [number, number, number]): [number, number, number] {
+    return [
+      m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+      m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+      m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+    ];
+  }
+
+  /** Low-precision geocentric Moon direction, Meeus. Enough to catch a flipped meridian. */
+  function moonDirection(jd: number): [number, number, number] {
+    const t = (jd - J2000) / 36525;
+    const lp = (218.3164477 + 481267.88123421 * t) * DEG;
+    const d = (297.8501921 + 445267.1114034 * t) * DEG;
+    const m = (357.5291092 + 35999.0502909 * t) * DEG;
+    const mp = (134.9633964 + 477198.8675055 * t) * DEG;
+    const f = (93.272095 + 483202.0175233 * t) * DEG;
+    const lon =
+      lp +
+      DEG *
+        (6.288774 * Math.sin(mp) +
+          1.274027 * Math.sin(2 * d - mp) +
+          0.658314 * Math.sin(2 * d) +
+          0.213618 * Math.sin(2 * mp) -
+          0.185116 * Math.sin(m) -
+          0.114332 * Math.sin(2 * f));
+    const lat =
+      DEG *
+      (5.128122 * Math.sin(f) +
+        0.280606 * Math.sin(mp + f) +
+        0.277693 * Math.sin(mp - f) +
+        0.173238 * Math.sin(2 * d - f));
+    const eps = 23.4392911 * DEG;
+    const x = Math.cos(lat) * Math.cos(lon);
+    const y = Math.cos(eps) * Math.cos(lat) * Math.sin(lon) - Math.sin(eps) * Math.sin(lat);
+    const z = Math.sin(eps) * Math.cos(lat) * Math.sin(lon) + Math.cos(eps) * Math.sin(lat);
+    const scale = Math.hypot(x, y, z);
+    return [x / scale, y / scale, z / scale];
+  }
+
+  it("keeps the north pole on the IAU direction at J2000", () => {
+    const body = moonEmeFromBody(J2000);
+    const pole = column(body, 2);
+    const ra = ((Math.atan2(pole[1], pole[0]) * (180 / Math.PI)) + 360) % 360;
+    const dec = Math.asin(pole[2]) * (180 / Math.PI);
+    expect(ra).toBeGreaterThan(260);
+    expect(ra).toBeLessThan(275);
+    expect(dec).toBeGreaterThan(64);
+    expect(dec).toBeLessThan(69);
+    const meridian = column(body, 0);
+    expect(Math.hypot(meridian[0], meridian[1], meridian[2])).toBeCloseTo(1, 12);
+    expect(meridian[0] * pole[0] + meridian[1] * pole[1] + meridian[2] * pole[2]).toBeCloseTo(0, 10);
+  });
+
+  it("points the prime meridian near the Earth", () => {
+    const body = moonEmeFromBody(J2000);
+    const moon = moonDirection(J2000);
+    const earth: [number, number, number] = [-moon[0], -moon[1], -moon[2]];
+    const transpose = [
+      body[0], body[3], body[6],
+      body[1], body[4], body[7],
+      body[2], body[5], body[8],
+    ];
+    const seen = apply(transpose, earth);
+    const longitude = Math.atan2(seen[1], seen[0]) * (180 / Math.PI);
+    const latitude = Math.asin(seen[2]) * (180 / Math.PI);
+    expect(Math.abs(longitude)).toBeLessThan(8);
+    expect(Math.abs(latitude)).toBeLessThan(8);
+  });
+
+  it("matches the scene axes used for the Earth", () => {
+    const eme = moonEmeFromBody(J2000);
+    const scene = moonScene(J2000);
+    const meridian = column(eme, 0);
+    const placed = column(scene, 0);
+    expect(placed[0]).toBeCloseTo(meridian[0], 12);
+    expect(placed[1]).toBeCloseTo(meridian[2], 12);
+    expect(placed[2]).toBeCloseTo(-meridian[1], 12);
+    const pole = column(eme, 2);
+    const poleScene = column(scene, 1);
+    expect(poleScene[0]).toBeCloseTo(pole[0], 12);
+    expect(poleScene[1]).toBeCloseTo(pole[2], 12);
+    expect(poleScene[2]).toBeCloseTo(-pole[1], 12);
   });
 });

@@ -67,6 +67,7 @@ button:focus-visible,
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
+  will-change: transform;
 }
 
 .welcome-bg {

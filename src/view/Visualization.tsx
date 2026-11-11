@@ -6,6 +6,7 @@ import { useBoxMotion } from "./useBoxMotion";
 export type NameDisplay = "shown" | "hidden";
 export type RenderStyle = "minimal" | "realistic";
 export type Clouds = "on" | "off";
+export type Stars = "on" | "off";
 
 const LINES: { id: TrajectoryLine; label: string }[] = [
   { id: "all", label: "All" },
@@ -28,6 +29,11 @@ const CLOUDS: { id: Clouds; label: string }[] = [
   { id: "off", label: "Off" },
 ];
 
+const STARS: { id: Stars; label: string }[] = [
+  { id: "on", label: "On" },
+  { id: "off", label: "Off" },
+];
+
 /** `#RGB` and `#RRGGBB`, with or without the hash, as a six-digit CSS color. */
 export function parseHex(value: string): string | null {
   const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
@@ -40,28 +46,36 @@ export function Visualization({
   open,
   line,
   color,
-  names,
+  objectName,
+  bodyName,
   renderStyle,
   clouds,
+  stars,
   onToggle,
   onLine,
   onColor,
-  onNames,
+  onObjectName,
+  onBodyName,
   onRenderStyle,
   onClouds,
+  onStars,
 }: {
   open: boolean;
   line: TrajectoryLine;
   color: string;
-  names: NameDisplay;
+  objectName: NameDisplay;
+  bodyName: NameDisplay;
   renderStyle: RenderStyle;
   clouds: Clouds;
+  stars: Stars;
   onToggle: () => void;
   onLine: (line: TrajectoryLine) => void;
   onColor: (color: string) => void;
-  onNames: (names: NameDisplay) => void;
+  onObjectName: (names: NameDisplay) => void;
+  onBodyName: (names: NameDisplay) => void;
   onRenderStyle: (style: RenderStyle) => void;
   onClouds: (clouds: Clouds) => void;
+  onStars: (stars: Stars) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [arrived, setArrived] = useState(false);
@@ -99,6 +113,7 @@ export function Visualization({
               ))}
             </div>
             {renderStyle === "realistic" && (
+              <>
               <div className="viz-field">
                 <span id="viz-clouds">Cloud</span>
                 <div className="viz-choices" role="group" aria-labelledby="viz-clouds">
@@ -115,6 +130,23 @@ export function Visualization({
                   ))}
                 </div>
               </div>
+              <div className="viz-field">
+                <span id="viz-stars">Stars</span>
+                <div className="viz-choices" role="group" aria-labelledby="viz-stars">
+                  {STARS.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className="round-control pressable"
+                      aria-pressed={stars === item.id}
+                      onClick={() => onStars(item.id)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              </>
             )}
           </section>
           <section className="viz-group">
@@ -162,15 +194,31 @@ export function Visualization({
           <section className="viz-group">
             <h3>Label</h3>
             <div className="viz-field">
-              <span id="viz-names">Display Name</span>
-              <div className="viz-choices" role="group" aria-labelledby="viz-names">
+              <span id="viz-object-name">Object Name</span>
+              <div className="viz-choices" role="group" aria-labelledby="viz-object-name">
                 {NAMES.map((item) => (
                   <button
                     type="button"
                     key={item.id}
                     className="round-control pressable"
-                    aria-pressed={names === item.id}
-                    onClick={() => onNames(item.id)}
+                    aria-pressed={objectName === item.id}
+                    onClick={() => onObjectName(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="viz-field">
+              <span id="viz-body-name">Body Name</span>
+              <div className="viz-choices" role="group" aria-labelledby="viz-body-name">
+                {NAMES.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className="round-control pressable"
+                    aria-pressed={bodyName === item.id}
+                    onClick={() => onBodyName(item.id)}
                   >
                     {item.label}
                   </button>

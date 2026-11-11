@@ -139,6 +139,87 @@ export function sunEme2000(jdTt: number): [number, number, number] {
   return [eme[0] / scale, eme[1] / scale, eme[2] / scale];
 }
 
+/** SOFA r-matrix for a positive rotation of the frame about X. */
+function r1(phi: number): Mat3 {
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
+  return [1, 0, 0, 0, c, s, 0, -s, c];
+}
+
+/**
+ * IAU north pole and prime meridian of the Moon, in EME2000.
+ * The series is the IAU working-group model: the secular pole plus the
+ * libration terms in E1–E13. d is days and T is centuries from J2000.0 TT.
+ * The returned matrix sends the body frame (X prime meridian, Y east, Z north)
+ * into EME2000.
+ */
+export function moonEmeFromBody(jdTt: number): Mat3 {
+  const d = jdTt - J2000;
+  const t = d / JULIAN_CENTURY;
+  const arg = (deg: number, rate: number) => (deg + rate * d) * DEG;
+  const e1 = arg(125.045, -0.0529921);
+  const e2 = arg(250.089, -0.1059842);
+  const e3 = arg(260.008, 13.0120009);
+  const e4 = arg(176.625, 13.3407154);
+  const e5 = arg(357.529, 0.9856003);
+  const e6 = arg(311.589, 26.4057084);
+  const e7 = arg(134.963, 13.064993);
+  const e8 = arg(276.617, 0.3287146);
+  const e9 = arg(34.226, 1.7484877);
+  const e10 = arg(15.134, -0.1589763);
+  const e11 = arg(119.743, 0.0036096);
+  const e12 = arg(239.961, 0.1643573);
+  const e13 = arg(25.053, 12.9590088);
+  const alpha =
+    (269.9949 +
+      0.0031 * t -
+      3.8787 * Math.sin(e1) -
+      0.1204 * Math.sin(e2) +
+      0.07 * Math.sin(e3) -
+      0.0172 * Math.sin(e4) +
+      0.0072 * Math.sin(e6) -
+      0.0052 * Math.sin(e10) +
+      0.0043 * Math.sin(e13)) *
+    DEG;
+  const delta =
+    (66.5392 +
+      0.013 * t +
+      1.5419 * Math.cos(e1) +
+      0.0239 * Math.cos(e2) -
+      0.0278 * Math.cos(e3) +
+      0.0068 * Math.cos(e4) -
+      0.0029 * Math.cos(e6) +
+      0.0009 * Math.cos(e7) +
+      0.0008 * Math.cos(e10) -
+      0.0009 * Math.cos(e13)) *
+    DEG;
+  const prime =
+    (38.3213 +
+      13.17635815 * d -
+      1.4e-12 * d * d +
+      3.561 * Math.sin(e1) +
+      0.1208 * Math.sin(e2) -
+      0.0642 * Math.sin(e3) +
+      0.0158 * Math.sin(e4) +
+      0.0252 * Math.sin(e5) -
+      0.0066 * Math.sin(e6) -
+      0.0047 * Math.sin(e7) -
+      0.0046 * Math.sin(e8) +
+      0.0028 * Math.sin(e9) +
+      0.0052 * Math.sin(e10) +
+      0.004 * Math.sin(e11) +
+      0.0019 * Math.sin(e12) -
+      0.0044 * Math.sin(e13)) *
+    DEG;
+  const toBody = mul(mul(r3(prime), r1(Math.PI / 2 - delta)), r3(Math.PI / 2 + alpha));
+  return transpose(toBody);
+}
+
+/** Moon attitude in scene axes. Local +X is 0° longitude and local +Y is north. */
+export function moonScene(jdTt: number): Mat3 {
+  return mul(mul(EME_TO_SCENE, moonEmeFromBody(jdTt)), SCENE_TO_EME);
+}
+
 /** Sun direction in scene axes, unit length. */
 export function sunScene(jdTt: number): [number, number, number] {
   const [x, y, z] = sunEme2000(jdTt);

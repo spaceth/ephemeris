@@ -2,7 +2,8 @@ import { useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { earthEpochs, earthScene, sunScene } from "../core";
+import { earthEpochs, earthScene, moonScene, sunScene } from "../core";
+import type { Mat3 } from "../core";
 import type { SceneClock } from "./types";
 
 /**
@@ -13,9 +14,11 @@ import type { SceneClock } from "./types";
 const EARTH_DAY = "/textures/earth-day.jpg";
 const EARTH_CLOUD = "/textures/earth-cloud-day.jpg";
 const EARTH_NIGHT = "/textures/earth-night.jpg";
+const MOON_COLOR = "/textures/moon.jpg";
 useTexture.preload(EARTH_DAY);
 useTexture.preload(EARTH_CLOUD);
 useTexture.preload(EARTH_NIGHT);
+useTexture.preload(MOON_COLOR);
 
 /** Atmosphere shell. Wide enough to fade, close enough to stay on the limb. */
 const AIR_SCALE = 1.045;
@@ -163,9 +166,9 @@ function LitSphere({
   radiusKm,
   clock,
   map,
-  orient,
+  axes,
   textured,
-}: BodyProps & { map: THREE.Texture; orient: boolean; textured: boolean }) {
+}: BodyProps & { map: THREE.Texture; axes: ((jdTt: number) => Mat3) | null; textured: boolean }) {
   const mesh = useRef<THREE.Mesh>(null);
   const geometry = useMemo(() => new THREE.SphereGeometry(radiusKm, 96, 64), [radiusKm]);
   const material = useMemo(() => litMaterial(map, textured), [map, textured]);
@@ -183,17 +186,17 @@ function LitSphere({
     const body = mesh.current;
     if (!origin) {
       sun.set(1, 0, 0);
-      if (orient && body) {
+      if (axes && body) {
         body.matrix.identity();
         body.matrixAutoUpdate = true;
       }
       return;
     }
-    const { jdUt1, jdTt } = earthEpochs(origin, clock.current.t);
+    const { jdTt } = earthEpochs(origin, clock.current.t);
     const direction = sunScene(jdTt);
     sun.set(direction[0], direction[1], direction[2]);
-    if (!orient || !body) return;
-    const rows = earthScene(jdUt1, jdTt);
+    if (!axes || !body) return;
+    const rows = axes(jdTt);
     body.matrix.set(
       rows[0], rows[1], rows[2], 0,
       rows[3], rows[4], rows[5], 0,
@@ -216,7 +219,22 @@ export function LitBody(props: BodyProps) {
     return texture;
   }, []);
   useEffect(() => () => blank.dispose(), [blank]);
-  return <LitSphere {...props} map={blank} orient={false} textured={false} />;
+  return <LitSphere {...props} map={blank} axes={null} textured={false} />;
+}
+
+/**
+ * CGI Moon Kit color map (NASA SVS), centered on 0° longitude.
+ * The crust is turned by the IAU pole and prime meridian. The terminator
+ * uses the geocentric Sun, which differs from the selenocentric Sun by
+ * a fraction of a degree.
+ */
+export function MoonBody(props: BodyProps) {
+  const map = useTexture(MOON_COLOR);
+  const gl = useThree((state) => state.gl);
+  useLayoutEffect(() => {
+    configureMap(map, gl);
+  }, [gl, map]);
+  return <LitSphere {...props} map={map} axes={moonScene} textured />;
 }
 
 function configureMap(map: THREE.Texture, gl: THREE.WebGLRenderer) {

@@ -8,7 +8,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
-import { EarthBody, LitBody, SunBody } from "./Globe";
+import { EarthBody, LitBody, MoonBody, SunBody } from "./Globe";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
 import type { CameraMode } from "./camera";
@@ -38,12 +38,16 @@ type OrbitProps = {
   trajectoryLine: TrajectoryLine;
   /** CSS hex color for the trajectory. */
   trajectoryColor: string;
-  /** Screen names for the center and the spacecraft. */
-  showNames: boolean;
+  /** Screen name for the center body. */
+  showBodyName: boolean;
+  /** Screen name for the spacecraft. */
+  showObjectName: boolean;
   /** Sun-lit body. Earth uses day and night maps, oriented in EME2000. The Sun is a white disk with a lens flare. */
   realistic: boolean;
   /** Earth day map with clouds. Ignored unless realistic Earth is showing. */
   clouds: boolean;
+  /** Star field. Ignored unless realistic is showing. */
+  stars: boolean;
   /** Screen labels. The scene writes their position each frame. */
   centerLabelEl: RefObject<HTMLSpanElement | null>;
   objectLabelEl: RefObject<HTMLSpanElement | null>;
@@ -279,12 +283,25 @@ function Craft({ pose }: { pose: RefObject<CraftPose | null> }) {
   );
 }
 
+const LABEL_ORIGIN = new THREE.Vector3();
+
+/** Pixels from the projected center up to the near side of the limb. */
+function limbLiftPx(camera: THREE.Camera, radiusKm: number, height: number): number {
+  if (radiusKm <= 0 || !(camera instanceof THREE.PerspectiveCamera)) return 0;
+  const dist = camera.position.length();
+  if (dist <= radiusKm) return 0;
+  const half = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
+  return (radiusKm / dist) / half * height * 0.5;
+}
+
 function placeLabel(
   el: HTMLSpanElement | null,
   world: THREE.Vector3,
   show: boolean,
   camera: THREE.Camera,
   size: { width: number; height: number },
+  pixelRatio: number,
+  liftPx: number,
   scratch: THREE.Vector3,
   forward: THREE.Vector3,
 ) {
@@ -299,8 +316,9 @@ function placeLabel(
     el.style.visibility = "hidden";
     return;
   }
-  const x = (scratch.x * 0.5 + 0.5) * size.width;
-  const y = (-scratch.y * 0.5 + 0.5) * size.height;
+  const pixel = Math.max(pixelRatio, 1);
+  const x = Math.round((scratch.x * 0.5 + 0.5) * size.width * pixel) / pixel;
+  const y = Math.round(((-scratch.y * 0.5 + 0.5) * size.height - liftPx) * pixel) / pixel;
   el.style.visibility = "visible";
   el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, calc(-100% - 8px))`;
 }
@@ -309,7 +327,8 @@ function placeLabel(
 function SceneLabels({
   centerLabel,
   objectLabel,
-  showNames,
+  showBodyName,
+  showObjectName,
   radiusKm,
   pose,
   centerEl,
@@ -317,21 +336,46 @@ function SceneLabels({
 }: {
   centerLabel: string;
   objectLabel: string;
-  showNames: boolean;
+  showBodyName: boolean;
+  showObjectName: boolean;
   radiusKm: number;
   pose: RefObject<CraftPose | null>;
   centerEl: RefObject<HTMLSpanElement | null>;
   craftEl: RefObject<HTMLSpanElement | null>;
 }) {
-  const lift = useMemo(() => new THREE.Vector3(), []);
   const scratch = useMemo(() => new THREE.Vector3(), []);
   const forward = useMemo(() => new THREE.Vector3(), []);
-  useFrame(({ camera, size }) => {
-    if (radiusKm > 0) lift.set(0, 1, 0).applyQuaternion(camera.quaternion).setLength(radiusKm);
-    else lift.set(0, 0, 0);
-    placeLabel(centerEl.current, lift, showNames && Boolean(centerLabel), camera, size, scratch, forward);
+  // Mounted last so this runs after the camera director. lookAt leaves the view
+  // matrix stale, and a fast orbit or a high playback rate would otherwise leave
+  // the names a frame behind the craft. The center name is a screen offset above
+  // the body, so it does not ride a surface point while the camera translates.
+  useFrame(({ camera, size, gl }) => {
+    camera.updateMatrixWorld();
+    const pixelRatio = gl.getPixelRatio();
+    const inside = radiusKm > 0 && camera.position.length() <= radiusKm;
+    placeLabel(
+      centerEl.current,
+      LABEL_ORIGIN,
+      showBodyName && Boolean(centerLabel) && !inside,
+      camera,
+      size,
+      pixelRatio,
+      limbLiftPx(camera, radiusKm, size.height),
+      scratch,
+      forward,
+    );
     const sample = pose.current;
-    placeLabel(craftEl.current, sample?.pos ?? lift, showNames && Boolean(sample?.ok && objectLabel), camera, size, scratch, forward);
+    placeLabel(
+      craftEl.current,
+      sample?.pos ?? LABEL_ORIGIN,
+      showObjectName && Boolean(sample?.ok && objectLabel),
+      camera,
+      size,
+      pixelRatio,
+      0,
+      scratch,
+      forward,
+    );
   });
   return null;
 }
@@ -364,9 +408,11 @@ export function OrbitView({
   objectLabel,
   trajectoryLine,
   trajectoryColor,
-  showNames,
+  showBodyName,
+  showObjectName,
   realistic,
   clouds,
+  stars,
   centerLabelEl,
   objectLabelEl,
   bodyRadiusKm,
@@ -383,7 +429,7 @@ export function OrbitView({
       dpr={[1, 2]}
     >
       <color attach="background" args={["#000000"]} />
-      {realistic && <StarField />}
+      {realistic && stars && <StarField />}
       {realistic && centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
         <>
           <SunBody radiusKm={bodyRadiusKm} />
@@ -391,6 +437,8 @@ export function OrbitView({
         </>
       ) : realistic && centerName === "EARTH" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
         <EarthBody radiusKm={bodyRadiusKm} clock={clock} clouds={clouds} />
+      ) : realistic && centerName === "MOON" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <MoonBody radiusKm={bodyRadiusKm} clock={clock} />
       ) : realistic && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
         <LitBody radiusKm={bodyRadiusKm} clock={clock} />
       ) : bodyRadiusKm != null && bodyRadiusKm > 0 ? (
@@ -411,15 +459,6 @@ export function OrbitView({
       ))}
       <CraftProbe clock={clock} pose={pose} />
       <Craft pose={pose} />
-      <SceneLabels
-        centerLabel={centerLabel}
-        objectLabel={objectLabel}
-        showNames={showNames}
-        radiusKm={bodyRadiusKm ?? 0}
-        pose={pose}
-        centerEl={centerLabelEl}
-        craftEl={objectLabelEl}
-      />
       <OrbitControls
         makeDefault
         enabled
@@ -431,6 +470,16 @@ export function OrbitView({
       />
       <CameraRig fit={fit} resetToken={resetToken} mode={cameraMode} />
       <CameraDirector pose={pose} mode={cameraMode} bodyRadiusKm={bodyRadiusKm ?? 0} onCameraMode={onCameraMode} />
+      <SceneLabels
+        centerLabel={centerLabel}
+        objectLabel={objectLabel}
+        showBodyName={showBodyName}
+        showObjectName={showObjectName}
+        radiusKm={bodyRadiusKm ?? 0}
+        pose={pose}
+        centerEl={centerLabelEl}
+        craftEl={objectLabelEl}
+      />
     </Canvas>
   );
 }

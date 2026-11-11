@@ -49,7 +49,7 @@ void main() {
   float disc = smoothstep(1.0, 0.2, dist);
   if (disc < 0.03) discard;
   vec3 rgb = sRGBTransferEOTF(vec4(vColor, 1.0)).rgb;
-  gl_FragColor = vec4(rgb * disc, disc);
+  gl_FragColor = vec4(rgb * disc * 0.75, disc);
   gl_FragDepth = 1.0;
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

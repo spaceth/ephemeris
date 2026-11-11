@@ -8,7 +8,7 @@ import { EphemerisPanel } from "./EphemerisPanel";
 import { LeaveMenu } from "./LeaveMenu";
 import type { TrajectoryLine } from "./OrbitView";
 import { Visualization } from "./Visualization";
-import type { Clouds, NameDisplay, RenderStyle } from "./Visualization";
+import type { Clouds, NameDisplay, RenderStyle, Stars } from "./Visualization";
 import type { CameraMode } from "./camera";
 import { trajectoryRadius } from "./sceneFit";
 import type { ViewGate } from "./useViewGate";
@@ -47,9 +47,11 @@ export function Viewer({
   const [vizOpen, setVizOpen] = useState(false);
   const [trajectoryLine, setTrajectoryLine] = useState<TrajectoryLine>("all");
   const [trajectoryColor, setTrajectoryColor] = useState("#ffffff");
-  const [nameDisplay, setNameDisplay] = useState<NameDisplay>("shown");
+  const [objectName, setObjectName] = useState<NameDisplay>("shown");
+  const [bodyName, setBodyName] = useState<NameDisplay>("shown");
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("minimal");
   const [clouds, setClouds] = useState<Clouds>("on");
+  const [stars, setStars] = useState<Stars>("on");
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
@@ -98,9 +100,11 @@ export function Viewer({
               objectLabel={shown?.objectName ?? ""}
               trajectoryLine={trajectoryLine}
               trajectoryColor={trajectoryColor}
-              showNames={nameDisplay === "shown"}
+              showBodyName={bodyName === "shown"}
+              showObjectName={objectName === "shown"}
               realistic={renderStyle === "realistic"}
               clouds={clouds === "on"}
+              stars={stars === "on"}
               centerLabelEl={centerLabelEl}
               objectLabelEl={objectLabelEl}
               bodyRadiusKm={bodyRadiusKm}
@@ -173,15 +177,19 @@ export function Viewer({
           open={vizOpen}
           line={trajectoryLine}
           color={trajectoryColor}
-          names={nameDisplay}
+          objectName={objectName}
+          bodyName={bodyName}
           renderStyle={renderStyle}
           clouds={clouds}
+          stars={stars}
           onToggle={() => setVizOpen((value) => !value)}
           onLine={setTrajectoryLine}
           onColor={setTrajectoryColor}
-          onNames={setNameDisplay}
+          onObjectName={setObjectName}
+          onBodyName={setBodyName}
           onRenderStyle={setRenderStyle}
           onClouds={setClouds}
+          onStars={setStars}
         />
       )}
     </>

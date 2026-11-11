@@ -50,10 +50,22 @@ function hexRgb(hex: string): [number, number, number] {
   return [(value >> 16) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
 }
 
-/** sRGB color from a B−V index. Missing indexes stay white. */
+/** Catalog colors are shown at half the raw B−V saturation. */
+const SATURATION = 0.5;
+
+function saturate(rgb: [number, number, number]): [number, number, number] {
+  const gray = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  return [
+    gray + (rgb[0] - gray) * SATURATION,
+    gray + (rgb[1] - gray) * SATURATION,
+    gray + (rgb[2] - gray) * SATURATION,
+  ];
+}
+
+/** sRGB color from a B−V index, at 50% saturation. Missing indexes stay white. */
 export function starColor(bv: number | null): [number, number, number] {
   if (bv == null || Number.isNaN(bv)) return [1, 1, 1];
   const kx = BV_COLORS.length / (BV_BLUE - BV_RED);
   const index = Math.max(0, Math.min(BV_COLORS.length - 1, Math.floor(kx * (bv - BV_RED))));
-  return hexRgb(BV_COLORS[index]);
+  return saturate(hexRgb(BV_COLORS[index]));
 }
