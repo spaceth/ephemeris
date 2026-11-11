@@ -6,6 +6,9 @@ import type { EphemerisSession } from "../useEphemeris";
 import { Clock } from "./Clock";
 import { EphemerisPanel } from "./EphemerisPanel";
 import { LeaveMenu } from "./LeaveMenu";
+import type { TrajectoryLine } from "./OrbitView";
+import { Visualization } from "./Visualization";
+import type { NameDisplay } from "./Visualization";
 import type { CameraMode } from "./camera";
 import { trajectoryRadius } from "./sceneFit";
 import type { ViewGate } from "./useViewGate";
@@ -40,19 +43,31 @@ export function Viewer({
   const fit = useMemo(() => trajectoryRadius(shownArcs), [shownArcs]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [clockOpen, setClockOpen] = useState(true);
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 720px)").matches);
+  const [vizOpen, setVizOpen] = useState(false);
+  const [trajectoryLine, setTrajectoryLine] = useState<TrajectoryLine>("all");
+  const [trajectoryColor, setTrajectoryColor] = useState("#ffffff");
+  const [nameDisplay, setNameDisplay] = useState<NameDisplay>("shown");
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
   const objectLabelEl = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const apply = () => setNarrow(query.matches);
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
     const style = {
-      "--sheet": panelOpen ? "70%" : "120px",
+      "--sheet": panelOpen ? (narrow ? "58%" : "70%") : "120px",
       ...(panelHeight > 0 ? { "--panel-h": `${panelHeight}px` } : {}),
     } as CSSProperties;
     onChrome(style);
     return () => onChrome({});
-  }, [onChrome, panelHeight, panelOpen]);
+  }, [narrow, onChrome, panelHeight, panelOpen]);
 
   if (!file) return null;
 
@@ -79,6 +94,9 @@ export function Viewer({
               centerName={center?.name ?? null}
               centerLabel={shown?.centerName ?? ""}
               objectLabel={shown?.objectName ?? ""}
+              trajectoryLine={trajectoryLine}
+              trajectoryColor={trajectoryColor}
+              showNames={nameDisplay === "shown"}
               centerLabelEl={centerLabelEl}
               objectLabelEl={objectLabelEl}
               bodyRadiusKm={bodyRadiusKm}
@@ -144,6 +162,18 @@ export function Viewer({
           onLive={session.goLive}
           cameraMode={cameraMode}
           onCameraMode={setCameraMode}
+        />
+      )}
+      {viewing && (
+        <Visualization
+          open={vizOpen}
+          line={trajectoryLine}
+          color={trajectoryColor}
+          names={nameDisplay}
+          onToggle={() => setVizOpen((value) => !value)}
+          onLine={setTrajectoryLine}
+          onColor={setTrajectoryColor}
+          onNames={setNameDisplay}
         />
       )}
     </>

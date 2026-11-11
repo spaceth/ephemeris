@@ -19,7 +19,7 @@ scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   try {
     const file = parseOem(message.text);
     const arcs = buildArcs(file);
-    post({ type: "parsed", id: message.id, name: message.name, file, arcs }, arcs.map((arc) => arc.positions.buffer));
+    post({ type: "parsed", id: message.id, name: message.name, file, arcs }, arcs.flatMap((arc) => [arc.positions.buffer, arc.times.buffer]));
   } catch (error) {
     const text = error instanceof Error ? error.message : "Could not read this OEM";
     post({ type: "parse-error", id: message.id, message: text });

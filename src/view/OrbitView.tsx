@@ -1,8 +1,11 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
+import { Line2 } from "three/addons/lines/Line2.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
 import type { CameraMode } from "./camera";
@@ -12,6 +15,10 @@ import type { SceneClock } from "./types";
 
 const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
 const CENTER_ORIGIN = new Float32Array([0, 0, 0]);
+/** Framebuffer pixels across the strip. The falloff below keeps the bright core near one pixel. */
+const ARC_WIDTH_PX = 2;
+
+export type TrajectoryLine = "all" | "trail" | "hidden";
 
 type OrbitProps = {
   arcs: ArcBuffer[];
@@ -24,6 +31,12 @@ type OrbitProps = {
   centerLabel: string;
   /** Name drawn on the spacecraft. Empty hides the label. */
   objectLabel: string;
+  /** Full arc, the path already flown, or nothing. */
+  trajectoryLine: TrajectoryLine;
+  /** CSS hex color for the trajectory. */
+  trajectoryColor: string;
+  /** Screen names for the center and the spacecraft. */
+  showNames: boolean;
   /** Screen labels. The scene writes their position each frame. */
   centerLabelEl: RefObject<HTMLSpanElement | null>;
   objectLabelEl: RefObject<HTMLSpanElement | null>;
@@ -34,27 +47,136 @@ type OrbitProps = {
   onCameraMode: (mode: CameraMode) => void;
 };
 
-function ArcLine({ positions, opacity }: { positions: Float32Array; opacity: number }) {
+/** Coverage falloff across the screen-space strip, so the arc edge blends out. */
+function withEdgeFalloff(source: string): string {
+  return source
+    .replace(
+      "if ( len2 > 1.0 ) discard;",
+      "alpha *= 1.0 - smoothstep( 0.35, 1.0, len2 );",
+    )
+    .replace(
+      "gl_FragColor = vec4( diffuseColor.rgb, alpha );",
+      "alpha *= 1.0 - smoothstep( 0.35, 1.0, abs( vUv.x ) );\n\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );",
+    );
+}
+
+/** Greatest vertex index whose time is at or before `t`, or -1 when the arc is still ahead. */
+function lastAtOrBefore(times: Float32Array, t: number): number {
+  let lo = 0;
+  let hi = times.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] <= t) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
+
+function ArcLine({
+  positions,
+  times,
+  opacity,
+  color,
+  trail,
+  clock,
+}: {
+  positions: Float32Array;
+  times: Float32Array;
+  opacity: number;
+  color: string;
+  trail: boolean;
+  clock: { current: SceneClock };
+}) {
   const line = useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({
-      color: 0xf5f5f7,
-      transparent: opacity < 1,
+    const geometry = new LineGeometry();
+    geometry.setPositions(positions);
+    const ends = geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
+    ends.data.setUsage(THREE.DynamicDrawUsage);
+    const material = new LineMaterial({
+      color,
+      transparent: true,
       opacity,
+      depthWrite: false,
       toneMapped: false,
     });
-    const next = new THREE.Line(geometry, material);
+    material.uniforms.linewidth.value = ARC_WIDTH_PX;
+    material.fragmentShader = withEdgeFalloff(material.fragmentShader);
+    const next = new Line2(geometry, material);
     next.frustumCulled = false;
     return next;
-  }, [positions, opacity]);
+  }, [positions]);
+  const tip = useRef(-1);
+  useLayoutEffect(() => {
+    line.material.color.set(color);
+    line.material.opacity = opacity;
+  }, [line, color, opacity]);
   useEffect(() => {
     return () => {
       line.geometry.dispose();
-      const material = line.material;
-      if (!Array.isArray(material)) material.dispose();
+      line.material.dispose();
     };
   }, [line]);
+  useFrame(() => {
+    const geometry = line.geometry;
+    const end = geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
+    const full = Math.max(0, positions.length / 3 - 1);
+    const restore = (segment: number) => {
+      const offset = (segment + 1) * 3;
+      end.setXYZ(segment, positions[offset], positions[offset + 1], positions[offset + 2]);
+      end.data.addUpdateRange(segment * end.data.stride + end.offset, 3);
+      end.needsUpdate = true;
+    };
+    if (!trail || times.length < 2) {
+      if (tip.current >= 0) {
+        restore(tip.current);
+        tip.current = -1;
+      }
+      line.visible = full > 0;
+      if (geometry.instanceCount !== full) geometry.instanceCount = full;
+      return;
+    }
+    const index = lastAtOrBefore(times, clock.current.t);
+    if (index < 0) {
+      if (tip.current >= 0) {
+        restore(tip.current);
+        tip.current = -1;
+      }
+      line.visible = false;
+      geometry.instanceCount = 0;
+      return;
+    }
+    line.visible = true;
+    if (index >= times.length - 1) {
+      if (tip.current >= 0) {
+        restore(tip.current);
+        tip.current = -1;
+      }
+      if (geometry.instanceCount !== full) geometry.instanceCount = full;
+      return;
+    }
+    if (tip.current >= 0 && tip.current !== index) restore(tip.current);
+    const start = times[index];
+    const stop = times[index + 1];
+    const span = stop - start;
+    const u = span > 0 ? (clock.current.t - start) / span : 1;
+    const from = index * 3;
+    const to = from + 3;
+    end.setXYZ(
+      index,
+      positions[from] + (positions[to] - positions[from]) * u,
+      positions[from + 1] + (positions[to + 1] - positions[from + 1]) * u,
+      positions[from + 2] + (positions[to + 2] - positions[from + 2]) * u,
+    );
+    end.data.addUpdateRange(index * end.data.stride + end.offset, 3);
+    end.needsUpdate = true;
+    tip.current = index;
+    geometry.instanceCount = index + 1;
+  });
   return <primitive object={line} />;
 }
 
@@ -195,6 +317,7 @@ function placeLabel(
 function SceneLabels({
   centerLabel,
   objectLabel,
+  showNames,
   radiusKm,
   pose,
   centerEl,
@@ -202,6 +325,7 @@ function SceneLabels({
 }: {
   centerLabel: string;
   objectLabel: string;
+  showNames: boolean;
   radiusKm: number;
   pose: RefObject<CraftPose | null>;
   centerEl: RefObject<HTMLSpanElement | null>;
@@ -213,9 +337,9 @@ function SceneLabels({
   useFrame(({ camera, size }) => {
     if (radiusKm > 0) lift.set(0, 1, 0).applyQuaternion(camera.quaternion).setLength(radiusKm);
     else lift.set(0, 0, 0);
-    placeLabel(centerEl.current, lift, Boolean(centerLabel), camera, size, scratch, forward);
+    placeLabel(centerEl.current, lift, showNames && Boolean(centerLabel), camera, size, scratch, forward);
     const sample = pose.current;
-    placeLabel(craftEl.current, sample?.pos ?? lift, Boolean(sample?.ok && objectLabel), camera, size, scratch, forward);
+    placeLabel(craftEl.current, sample?.pos ?? lift, showNames && Boolean(sample?.ok && objectLabel), camera, size, scratch, forward);
   });
   return null;
 }
@@ -246,6 +370,9 @@ export function OrbitView({
   centerName,
   centerLabel,
   objectLabel,
+  trajectoryLine,
+  trajectoryColor,
+  showNames,
   centerLabelEl,
   objectLabelEl,
   bodyRadiusKm,
@@ -269,11 +396,15 @@ export function OrbitView({
       ) : (
         <OriginMark />
       )}
-      {arcs.map((arc) => (
+      {trajectoryLine !== "hidden" && arcs.map((arc) => (
         <ArcLine
           key={arc.segmentIndex}
           positions={arc.positions}
+          times={arc.times}
           opacity={arc.segmentIndex === selected ? 0.95 : 0.32}
+          color={trajectoryColor}
+          trail={trajectoryLine === "trail"}
+          clock={clock}
         />
       ))}
       <CraftProbe clock={clock} pose={pose} />
@@ -281,6 +412,7 @@ export function OrbitView({
       <SceneLabels
         centerLabel={centerLabel}
         objectLabel={objectLabel}
+        showNames={showNames}
         radiusKm={bodyRadiusKm ?? 0}
         pose={pose}
         centerEl={centerLabelEl}

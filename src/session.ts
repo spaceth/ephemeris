@@ -10,6 +10,8 @@ import type { Vec3 } from "./core/types";
 export type ArcBuffer = {
   segmentIndex: number;
   positions: Float32Array;
+  /** Seconds from the file origin, one per vertex, so a trail can end at the clock. */
+  times: Float32Array;
 };
 
 export type WorkerRequest = { type: "parse"; id: number; text: string; name: string };
@@ -53,10 +55,15 @@ export function buildArcs(file: OemFile): ArcBuffer[] {
     if (segment.evalStart == null || segment.evalStop == null) continue;
     const knots = usableKnots(segment, frame);
     if (knots.length < 2) continue;
-    const xyz = segment.plan.supported && segment.plan.kind !== "linear"
+    const line = segment.plan.supported && segment.plan.kind !== "linear"
       ? refine(knots, curve(segment, frame))
-      : knots.flatMap((knot) => [knot.x, knot.y, knot.z]);
-    arcs.push({ segmentIndex: segment.index, positions: new Float32Array(fitCap(xyz)) });
+      : { xyz: knots.flatMap((knot) => [knot.x, knot.y, knot.z]), times: knots.map((knot) => knot.t) };
+    const fitted = fitCap(line.xyz, line.times);
+    arcs.push({
+      segmentIndex: segment.index,
+      positions: new Float32Array(fitted.xyz),
+      times: new Float32Array(fitted.times),
+    });
   }
   return arcs;
 }
@@ -89,21 +96,23 @@ function knotAt(t: number, frame: SupportedFrame, position: Vec3): Knot {
 }
 
 /** Binary split while the interpolant leaves the straight chord. Linear segments are already straight. */
-function refine(knots: Knot[], curve: Curve): number[] {
+function refine(knots: Knot[], curve: Curve): { xyz: number[]; times: number[] } {
   const xyz: number[] = [knots[0].x, knots[0].y, knots[0].z];
-  for (let i = 1; i < knots.length; i += 1) emit(knots[i - 1], knots[i], curve, xyz, 0);
-  return xyz;
+  const times: number[] = [knots[0].t];
+  for (let i = 1; i < knots.length; i += 1) emit(knots[i - 1], knots[i], curve, xyz, times, 0);
+  return { xyz, times };
 }
 
-function emit(a: Knot, b: Knot, curve: Curve, xyz: number[], depth: number) {
+function emit(a: Knot, b: Knot, curve: Curve, xyz: number[], times: number[], depth: number) {
   const room = xyz.length / 3 < ARC_CAP - 1;
   const mid = room && depth < MAX_DEPTH && b.t - a.t > 1e-6 ? splitPoint(a, b, curve) : null;
   if (mid) {
-    emit(a, mid, curve, xyz, depth + 1);
-    emit(mid, b, curve, xyz, depth + 1);
+    emit(a, mid, curve, xyz, times, depth + 1);
+    emit(mid, b, curve, xyz, times, depth + 1);
     return;
   }
   xyz.push(b.x, b.y, b.z);
+  times.push(b.t);
 }
 
 function splitPoint(a: Knot, b: Knot, curve: Curve): Knot | null {
@@ -139,13 +148,20 @@ function segmentDistance(a: Knot, b: Knot, p: Knot): number {
 }
 
 /** Keep both ends when a refined line is past the vertex cap. */
-function fitCap(xyz: number[]): number[] {
-  const count = xyz.length / 3;
-  if (count <= ARC_CAP) return xyz;
+function fitCap(xyz: number[], times: number[]): { xyz: number[]; times: number[] } {
+  const count = times.length;
+  if (count <= ARC_CAP) return { xyz, times };
   const stride = Math.ceil(count / ARC_CAP);
   const flat: number[] = [];
-  for (let i = 0; i < count; i += stride) flat.push(xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]);
-  const last = (count - 1) * 3;
-  if (flat[flat.length - 3] !== xyz[last]) flat.push(xyz[last], xyz[last + 1], xyz[last + 2]);
-  return flat;
+  const kept: number[] = [];
+  for (let i = 0; i < count; i += stride) {
+    flat.push(xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]);
+    kept.push(times[i]);
+  }
+  const last = count - 1;
+  if (last % stride !== 0) {
+    flat.push(xyz[last * 3], xyz[last * 3 + 1], xyz[last * 3 + 2]);
+    kept.push(times[last]);
+  }
+  return { xyz: flat, times: kept };
 }

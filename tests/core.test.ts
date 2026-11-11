@@ -418,6 +418,8 @@ describe("orbit line", () => {
     const file = parseOem(kvn("", "2020-01-01T00:00:00 7000 0 0 0 7.5 0\n2020-01-01T00:04:00 6800 1800 0 -2 7 0"));
     const arc = buildArcs(file)[0];
     expect(arc.positions.length / 3).toBeGreaterThan(2);
+    expect(arc.times.length).toBe(arc.positions.length / 3);
+    for (let i = 1; i < arc.times.length; i += 1) expect(arc.times[i]).toBeGreaterThan(arc.times[i - 1]);
     const start = file.segments[0].evalStart ?? 0;
     const stop = file.segments[0].evalStop ?? 0;
     for (let step = 0; step <= 16; step += 1) {
@@ -433,7 +435,12 @@ describe("orbit line", () => {
     const file = parseOem(
       kvn("INTERPOLATION = LINEAR", "2020-01-01T00:00:00 7000 0 0 0 7.5 0\n2020-01-01T00:04:00 6800 1800 0 -2 7 0"),
     );
-    expect(buildArcs(file)[0].positions.length / 3).toBe(2);
+    const arc = buildArcs(file)[0];
+    expect(arc.positions.length / 3).toBe(2);
+    expect(Array.from(arc.times)).toEqual([
+      file.segments[0].samples[0].t,
+      file.segments[0].samples[1].t,
+    ]);
   });
 });
 
