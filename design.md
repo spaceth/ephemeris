@@ -68,7 +68,7 @@ A panel, chip, or sheet is:
 
 Inset from the viewport is **20px** (`top-5`, `left-5`, `right-5`). Panel padding is **20px**. The wordmark sits in a 56px-tall band, centered, and is 18px tall on desktop, 14.4px on a phone.
 
-On a phone the main panel becomes a bottom sheet: a top hairline, no blur on the inner glass, and a safe-area strip in the material color. The sheet is about 35% of the screen until the reader opens a detail, then about 70%.
+On a phone the main panel becomes a bottom sheet: a top hairline, the same blur as the other glass, and a safe-area strip in the material color. The sheet is about 35% of the screen until the reader opens a detail, then about 70%.
 
 If the user asks for less transparency, drop the blur and use solid black. If they ask for more contrast, use solid black and a foreground border.
 

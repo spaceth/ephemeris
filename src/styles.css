@@ -799,7 +799,6 @@ button.live-btn.is-live .live-dot { background: #000; }
     border-left: 0;
     border-right: 0;
     border-bottom: 0;
-    backdrop-filter: none;
     box-shadow: none;
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
     transition: height 320ms cubic-bezier(0.2, 0, 0, 1), width 320ms cubic-bezier(0.2, 0, 0, 1);
