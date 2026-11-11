@@ -7,5 +7,8 @@ export { sourceToEme2000, supportedFrame, GCRS_TO_EME2000 } from "./frames";
 export { orbitCenter, centerKey, ORBIT_CENTERS } from "./centers";
 export type { OrbitCenter } from "./centers";
 export { radecEme2000 } from "./radec";
+export { gmst, earthEmeFromItrf, earthScene, sunEme2000, sunScene, earthEpochs } from "./globe";
+export { starColor, starDirection, starPointSize, starScene } from "./stars";
+export type { Mat3 } from "./globe";
 export { LEAP_SOURCE } from "./time";
 export type { Failure } from "./types";

@@ -4,6 +4,8 @@ import { HideButton } from "./HideButton";
 import { useBoxMotion } from "./useBoxMotion";
 
 export type NameDisplay = "shown" | "hidden";
+export type RenderStyle = "minimal" | "realistic";
+export type Clouds = "on" | "off";
 
 const LINES: { id: TrajectoryLine; label: string }[] = [
   { id: "all", label: "All" },
@@ -14,6 +16,16 @@ const LINES: { id: TrajectoryLine; label: string }[] = [
 const NAMES: { id: NameDisplay; label: string }[] = [
   { id: "shown", label: "Shown" },
   { id: "hidden", label: "Hidden" },
+];
+
+const STYLES: { id: RenderStyle; label: string }[] = [
+  { id: "minimal", label: "Minimal" },
+  { id: "realistic", label: "Realistic" },
+];
+
+const CLOUDS: { id: Clouds; label: string }[] = [
+  { id: "on", label: "On" },
+  { id: "off", label: "Off" },
 ];
 
 /** `#RGB` and `#RRGGBB`, with or without the hash, as a six-digit CSS color. */
@@ -29,19 +41,27 @@ export function Visualization({
   line,
   color,
   names,
+  renderStyle,
+  clouds,
   onToggle,
   onLine,
   onColor,
   onNames,
+  onRenderStyle,
+  onClouds,
 }: {
   open: boolean;
   line: TrajectoryLine;
   color: string;
   names: NameDisplay;
+  renderStyle: RenderStyle;
+  clouds: Clouds;
   onToggle: () => void;
   onLine: (line: TrajectoryLine) => void;
   onColor: (color: string) => void;
   onNames: (names: NameDisplay) => void;
+  onRenderStyle: (style: RenderStyle) => void;
+  onClouds: (clouds: Clouds) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [arrived, setArrived] = useState(false);
@@ -63,6 +83,40 @@ export function Visualization({
       </div>
       {open && (
         <div className="viz-body">
+          <section className="viz-group">
+            <h3>Realistic</h3>
+            <div className="viz-choices" role="group" aria-label="Realistic">
+              {STYLES.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className="round-control pressable"
+                  aria-pressed={renderStyle === item.id}
+                  onClick={() => onRenderStyle(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {renderStyle === "realistic" && (
+              <div className="viz-field">
+                <span id="viz-clouds">Cloud</span>
+                <div className="viz-choices" role="group" aria-labelledby="viz-clouds">
+                  {CLOUDS.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className="round-control pressable"
+                      aria-pressed={clouds === item.id}
+                      onClick={() => onClouds(item.id)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
           <section className="viz-group">
             <h3>Trajectory</h3>
             <div className="viz-field">

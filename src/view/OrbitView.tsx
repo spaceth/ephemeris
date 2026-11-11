@@ -8,6 +8,9 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
+import { EarthBody, LitBody, SunBody } from "./Globe";
+import { StarField } from "./Stars";
+import { SunLensFlare } from "./SunFlare";
 import type { CameraMode } from "./camera";
 import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
@@ -37,6 +40,10 @@ type OrbitProps = {
   trajectoryColor: string;
   /** Screen names for the center and the spacecraft. */
   showNames: boolean;
+  /** Sun-lit body. Earth uses day and night maps, oriented in EME2000. The Sun is a white disk with a lens flare. */
+  realistic: boolean;
+  /** Earth day map with clouds. Ignored unless realistic Earth is showing. */
+  clouds: boolean;
   /** Screen labels. The scene writes their position each frame. */
   centerLabelEl: RefObject<HTMLSpanElement | null>;
   objectLabelEl: RefObject<HTMLSpanElement | null>;
@@ -178,21 +185,6 @@ function ArcLine({
     geometry.instanceCount = index + 1;
   });
   return <primitive object={line} />;
-}
-
-/** Untextured solar sphere. A light gives it a limb so the ball reads as solid. */
-function SunSphere({ radiusKm }: { radiusKm: number }) {
-  const geometry = useMemo(() => new THREE.SphereGeometry(radiusKm, 64, 48), [radiusKm]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[1, 0.35, 0.6]} intensity={1.4} />
-      <mesh geometry={geometry}>
-        <meshLambertMaterial color="#f5f5f7" toneMapped={false} />
-      </mesh>
-    </>
-  );
 }
 
 function BodySphere({ radiusKm }: { radiusKm: number }) {
@@ -373,6 +365,8 @@ export function OrbitView({
   trajectoryLine,
   trajectoryColor,
   showNames,
+  realistic,
+  clouds,
   centerLabelEl,
   objectLabelEl,
   bodyRadiusKm,
@@ -389,8 +383,16 @@ export function OrbitView({
       dpr={[1, 2]}
     >
       <color attach="background" args={["#000000"]} />
-      {centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <SunSphere radiusKm={bodyRadiusKm} />
+      {realistic && <StarField />}
+      {realistic && centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <>
+          <SunBody radiusKm={bodyRadiusKm} />
+          <SunLensFlare radiusKm={bodyRadiusKm} />
+        </>
+      ) : realistic && centerName === "EARTH" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <EarthBody radiusKm={bodyRadiusKm} clock={clock} clouds={clouds} />
+      ) : realistic && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <LitBody radiusKm={bodyRadiusKm} clock={clock} />
       ) : bodyRadiusKm != null && bodyRadiusKm > 0 ? (
         <BodySphere radiusKm={bodyRadiusKm} />
       ) : (

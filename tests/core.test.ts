@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   centerKey,
+  earthEmeFromItrf,
+  earthEpochs,
+  earthScene,
   fromScene,
   GCRS_TO_EME2000,
+  gmst,
   liveSeconds,
   ORBIT_CENTERS,
   orbitCenter,
@@ -12,6 +16,11 @@ import {
   segmentAtTime,
   sourceToEme2000,
   stateAt,
+  starColor,
+  starDirection,
+  starPointSize,
+  starScene,
+  sunEme2000,
   toScene,
 } from "../src/core";
 import { hermiteCubic } from "../src/core/interpolate";
@@ -634,4 +643,128 @@ describe("sample OEM", () => {
     const first = lro.segments[0].samples[0];
     expect(stateAt(lro, first.t ?? 0, 0).ok).toBe(true);
   }, 120_000);
+});
+
+describe("earth in EME2000", () => {
+  const J2000 = 2451545.0;
+
+  function column(m: readonly number[], index: number): [number, number, number] {
+    return [m[index], m[3 + index], m[6 + index]];
+  }
+
+  it("puts Greenwich mean sidereal time at the J2000.0 value", () => {
+    expect(gmst(J2000) * (180 / Math.PI)).toBeCloseTo(280.460618375, 6);
+    const advance = (gmst(J2000 + 1) - gmst(J2000)) * (180 / Math.PI);
+    expect(advance).toBeGreaterThan(0.98);
+    expect(advance).toBeLessThan(0.99);
+  });
+
+  it("keeps the J2000 pole fixed and precesses it after a century", () => {
+    const now = earthEmeFromItrf(J2000, J2000);
+    const poleNow = column(now, 2);
+    expect(poleNow[0]).toBeCloseTo(0, 8);
+    expect(poleNow[1]).toBeCloseTo(0, 8);
+    expect(poleNow[2]).toBeCloseTo(1, 8);
+
+    const century = J2000 + 36525;
+    const later = earthEmeFromItrf(century, century);
+    const pole = column(later, 2);
+    const tiltArcsec = Math.acos(pole[2]) * (180 / Math.PI) * 3600;
+    expect(tiltArcsec).toBeCloseTo(2003.842417, 2);
+    expect(pole[0]).toBeGreaterThan(0);
+  });
+
+  it("sends the prime meridian to GMST in the equator", () => {
+    const angle = gmst(J2000);
+    const meridian = column(earthEmeFromItrf(J2000, J2000), 0);
+    expect(meridian[0]).toBeCloseTo(Math.cos(angle), 12);
+    expect(meridian[1]).toBeCloseTo(Math.sin(angle), 12);
+    expect(meridian[2]).toBeCloseTo(0, 10);
+  });
+
+  it("matches the scene axes used for ephemeris positions", () => {
+    const eme = earthEmeFromItrf(J2000, J2000);
+    const scene = earthScene(J2000, J2000);
+    const meridian = column(eme, 0);
+    const placed = column(scene, 0);
+    expect(placed[0]).toBeCloseTo(meridian[0], 12);
+    expect(placed[1]).toBeCloseTo(meridian[2], 12);
+    expect(placed[2]).toBeCloseTo(-meridian[1], 12);
+    const east = column(eme, 1);
+    const eastScene = [
+      scene[2] * -1,
+      scene[5] * -1,
+      scene[8] * -1,
+    ];
+    expect(eastScene[0]).toBeCloseTo(east[0], 12);
+    expect(eastScene[1]).toBeCloseTo(east[2], 12);
+    expect(eastScene[2]).toBeCloseTo(-east[1], 12);
+  });
+
+  it("places the Sun near the solstice declinations", () => {
+    const winter = sunEme2000(J2000);
+    const summer = sunEme2000(J2000 + 172);
+    expect(Math.asin(winter[2]) * (180 / Math.PI)).toBeCloseTo(-23.0, 0);
+    expect(Math.asin(summer[2]) * (180 / Math.PI)).toBeCloseTo(23.4, 0);
+    const ra = Math.atan2(winter[1], winter[0]);
+    let longitude = (ra - gmst(J2000)) * (180 / Math.PI);
+    longitude = ((longitude + 540) % 360) - 180;
+    expect(Math.abs(longitude)).toBeLessThan(1.5);
+  });
+
+  it("reads UT and TT from the file clock", () => {
+    const parsed = parseUtcEpoch("2000-01-01T12:00:00");
+    const epochs = earthEpochs({ tai1: parsed.tai1, tai2: parsed.tai2 }, 0);
+    expect(epochs.jdUt1).toBeCloseTo(J2000, 8);
+    expect((epochs.jdTt - epochs.jdUt1) * 86400).toBeCloseTo(64.184, 3);
+  });
+});
+
+describe("XHIP stars", () => {
+  it("places Sirius on its J2000 position", () => {
+    const sirius = starDirection(101.2872, -16.7161);
+    const sky = radecEme2000(sirius);
+    expect((sky.raRad ?? 0) * (180 / Math.PI)).toBeCloseTo(101.2872, 3);
+    expect(sky.decRad * (180 / Math.PI)).toBeCloseTo(-16.7161, 3);
+    const scene = starScene(101.2872, -16.7161);
+    expect(scene[0]).toBeCloseTo(sirius[0], 12);
+    expect(scene[1]).toBeCloseTo(sirius[2], 12);
+    expect(scene[2]).toBeCloseTo(-sirius[1], 12);
+  });
+
+  it("treats a wrapped right ascension as the same direction", () => {
+    const wrapped = starDirection(-146.0847, 19.1824);
+    const full = starDirection(213.9153, 19.1824);
+    expect(wrapped[0]).toBeCloseTo(full[0], 4);
+    expect(wrapped[1]).toBeCloseTo(full[1], 4);
+    expect(wrapped[2]).toBeCloseTo(full[2], 4);
+  });
+
+  it("draws brighter stars larger", () => {
+    expect(starPointSize(-1.44)).toBeGreaterThan(starPointSize(0));
+    expect(starPointSize(0)).toBeGreaterThan(starPointSize(6));
+  });
+
+  it("colors a hot star bluer than a cool star", () => {
+    const hot = starColor(-0.3);
+    const cool = starColor(1.85);
+    expect(hot[2]).toBeGreaterThan(cool[2]);
+    expect(cool[0]).toBeGreaterThan(hot[0]);
+    expect(starColor(null)).toEqual([1, 1, 1]);
+  });
+
+  it("ships the magnitude 6 catalog", () => {
+    const sky = JSON.parse(readFileSync("public/skymap.json", "utf8")) as {
+      catalog: string;
+      magnitudeLimit: number;
+      stars: [number, number, number, number | null][];
+    };
+    expect(sky.catalog).toBe("XHIP");
+    expect(sky.magnitudeLimit).toBe(6);
+    expect(sky.stars).toHaveLength(5044);
+    const sirius = sky.stars.find((star) => star[2] < -1);
+    expect(sirius?.[0]).toBeCloseTo(101.2872, 3);
+    expect(sirius?.[1]).toBeCloseTo(-16.7161, 3);
+    expect(sky.stars.every((star) => star[2] <= 6)).toBe(true);
+  });
 });
