@@ -24,6 +24,20 @@ type OrbitHandle = { target: THREE.Vector3; update?: () => void };
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 6;
 const DRAG_PX = 6;
+/** Kilometers above the surface. The camera stops here instead of entering the Earth. */
+const SURFACE_CLEARANCE_KM = 25;
+const surfacePoint = new THREE.Vector3();
+
+function stayOutsideEarth(camera: THREE.Camera, look: THREE.Vector3 | null) {
+  const limit = EARTH_RADIUS_KM + SURFACE_CLEARANCE_KM;
+  surfacePoint.copy(camera.position);
+  const reach = surfacePoint.length();
+  if (reach >= limit) return;
+  if (reach < 1e-3) surfacePoint.set(0, 1, 0);
+  surfacePoint.setLength(limit);
+  camera.position.copy(surfacePoint);
+  if (look) camera.lookAt(look);
+}
 
 function followDistance(rangeKm: number): number {
   const altitude = Math.max(rangeKm - EARTH_RADIUS_KM, 180);
@@ -177,39 +191,38 @@ export function CameraDirector({
       zoom.current = 1;
       applied.current = 0;
     }
-    if (mode === "overview") return;
-    const sample = pose.current;
-    if (!sample?.ok) return;
-    bag.pos.copy(sample.pos);
-    bag.vel.copy(sample.vel);
     const orbit = controls;
-    if (keepView.current && mode !== "follow" && orbit?.target) {
-      carry(camera, orbit.target, bag.pos, bag.desired, bag.worldUp);
-      return;
-    }
-    if (mode === "follow") {
-      const target = orbit?.target;
-      if (!target) return;
-      if (!followReady.current) {
-        if (keepView.current) {
-          carry(camera, target, bag.pos, bag.desired, bag.worldUp);
-          keepView.current = false;
+    const look = orbit?.target ?? null;
+    if (mode !== "overview") {
+      const sample = pose.current;
+      if (sample?.ok && look) {
+        bag.pos.copy(sample.pos);
+        bag.vel.copy(sample.vel);
+        if (keepView.current && mode !== "follow") {
+          carry(camera, look, bag.pos, bag.desired, bag.worldUp);
+        } else if (mode === "follow") {
+          if (!followReady.current) {
+            if (keepView.current) {
+              carry(camera, look, bag.pos, bag.desired, bag.worldUp);
+              keepView.current = false;
+            } else {
+              seedFollow(bag, camera, look);
+              orbit?.update?.();
+            }
+            followReady.current = true;
+          } else {
+            carry(camera, look, bag.pos, bag.desired, bag.worldUp);
+          }
         } else {
-          seedFollow(bag, camera, target);
-          orbit?.update?.();
+          adoptZoom(camera, look, zoom, applied);
+          const step = 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
+          if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look);
+          else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look);
         }
-        followReady.current = true;
-        return;
       }
-      carry(camera, target, bag.pos, bag.desired, bag.worldUp);
-      return;
     }
-    if (orbit?.target) adoptZoom(camera, orbit.target, zoom, applied);
-    if (!orbit?.target) return;
-    const step = 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
-    if (mode === "pov") placePov(bag, camera, anchored, zoom.current, orbit.target);
-    else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, orbit.target);
-    applied.current = camera.position.distanceTo(orbit.target);
+    stayOutsideEarth(camera, look);
+    if ((mode === "pov" || mode === "cinematic") && look) applied.current = camera.position.distanceTo(look);
   });
   return null;
 }

@@ -11,6 +11,7 @@ import {
   toScene,
 } from "../src/core";
 import { hermiteCubic } from "../src/core/interpolate";
+import { buildArcs } from "../src/session";
 import { parseUtcEpoch, taiSecondsBetween } from "../src/core/time";
 
 const DEG = Math.PI / 180;
@@ -327,6 +328,47 @@ COVARIANCE_STOP
       expect(state.raRad).toBeNull();
       expect(state.decRad).toBeNull();
     }
+  });
+});
+
+describe("orbit line", () => {
+  function nearest(positions: Float32Array, x: number, y: number, z: number): number {
+    let best = Infinity;
+    for (let i = 0; i < positions.length - 3; i += 3) {
+      const abx = positions[i + 3] - positions[i];
+      const aby = positions[i + 4] - positions[i + 1];
+      const abz = positions[i + 5] - positions[i + 2];
+      const apx = x - positions[i];
+      const apy = y - positions[i + 1];
+      const apz = z - positions[i + 2];
+      const ab2 = abx * abx + aby * aby + abz * abz;
+      const u = ab2 < 1e-12 ? 0 : Math.min(1, Math.max(0, (apx * abx + apy * aby + apz * abz) / ab2));
+      const dist = Math.hypot(apx - abx * u, apy - aby * u, apz - abz * u);
+      if (dist < best) best = dist;
+    }
+    return best;
+  }
+
+  it("follows the interpolant between samples instead of the chord", () => {
+    const file = parseOem(kvn("", "2020-01-01T00:00:00 7000 0 0 0 7.5 0\n2020-01-01T00:04:00 6800 1800 0 -2 7 0"));
+    const arc = buildArcs(file)[0];
+    expect(arc.positions.length / 3).toBeGreaterThan(2);
+    const start = file.segments[0].evalStart ?? 0;
+    const stop = file.segments[0].evalStop ?? 0;
+    for (let step = 0; step <= 16; step += 1) {
+      const state = stateAt(file, start + ((stop - start) * step) / 16, 0);
+      expect(state.ok).toBe(true);
+      if (!state.ok || !state.eme2000PositionM) continue;
+      const [x, y, z] = toScene(state.eme2000PositionM[0], state.eme2000PositionM[1], state.eme2000PositionM[2]);
+      expect(nearest(arc.positions, x, y, z)).toBeLessThan(2);
+    }
+  });
+
+  it("leaves a linear ephemeris as the sample chords", () => {
+    const file = parseOem(
+      kvn("INTERPOLATION = LINEAR", "2020-01-01T00:00:00 7000 0 0 0 7.5 0\n2020-01-01T00:04:00 6800 1800 0 -2 7 0"),
+    );
+    expect(buildArcs(file)[0].positions.length / 3).toBe(2);
   });
 });
 
