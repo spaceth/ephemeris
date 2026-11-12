@@ -1,4 +1,4 @@
-# Ephemeris
+# Spaceth Ephemeris Visualization 
 
 A static viewer for one spacecraft trajectory and the Earth, Moon, and Sun around it. Open a local CCSDS Orbit Ephemeris Message or a NAIF SPK. The file stays in the browser. The scene origin is the center named by the segment on screen. Positions are geometric: there is no light-time, stellar aberration, refraction, or apparent-place reduction.
 
