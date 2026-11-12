@@ -8,12 +8,15 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
+import { CaptureBridge } from "./CaptureBridge";
+import type { CaptureHandle } from "./CaptureBridge";
 import type { SphereObstacle } from "./CameraDirector";
 import { centerNaif } from "../core/ephemeris/place";
 import { Neighbors } from "./Neighbors";
 import { EarthBody, LitBody, MoonBody, SunBody } from "./Globe";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
+import type { FlareTune } from "./flareTune";
 import type { CameraMode } from "./camera";
 import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
@@ -61,6 +64,12 @@ type OrbitProps = {
   onCameraMode: (mode: CameraMode) => void;
   /** Names for the snapshot neighbors. Unused slots stay hidden. */
   neighborLabelEls: RefObject<HTMLSpanElement | null>[];
+  /** Live sun-flare overrides from the temporary panel. */
+  flareTune: RefObject<FlareTune>;
+  /** Filled once the canvas can copy a frame. */
+  capture: RefObject<CaptureHandle | null>;
+  /** Holds the drawing buffer at pixel ratio 1 while a frame is saved. */
+  capturing: boolean;
 };
 
 /** Coverage falloff across the screen-space strip, so the arc edge blends out. */
@@ -451,17 +460,26 @@ export function OrbitView({
   cameraMode,
   onCameraMode,
   neighborLabelEls,
+  flareTune,
+  capture,
+  capturing,
 }: OrbitProps) {
   const pose = useRef<CraftPose | null>(null);
   const obstacles = useRef<SphereObstacle[]>([]);
   const reach = useRef(0);
+  const exporting = useRef(false);
   return (
     <Canvas
       className="stage"
       gl={{ antialias: true, logarithmicDepthBuffer: true, alpha: false }}
       camera={{ fov: 42, position: [8, 24, 48], near: 0.02, far: 1e10 }}
-      dpr={[1, 2]}
+      dpr={capturing ? 1 : [1, 2]}
     >
+      <CaptureBridge
+        handle={capture}
+        exporting={exporting}
+        labels={[centerLabelEl, objectLabelEl, ...neighborLabelEls]}
+      />
       <color attach="background" args={["#000000"]} />
       {realistic && stars && <StarField />}
       {centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
@@ -487,7 +505,7 @@ export function OrbitView({
         reach={reach}
         labelEls={neighborLabelEls}
       />
-      {realistic && centerNaif(centerName) != null && <SunLensFlare />}
+      {realistic && centerNaif(centerName) != null && <SunLensFlare tune={flareTune} />}
       {trajectoryLine !== "hidden" && arcs.map((arc) => (
         <ArcLine
           key={arc.segmentIndex}
@@ -503,9 +521,9 @@ export function OrbitView({
       <Craft pose={pose} />
       <OrbitControls
         makeDefault
-        enabled
-        enablePan={cameraMode === "overview" || cameraMode === "system"}
-        enableDamping
+        enabled={!capturing}
+        enablePan={!capturing && (cameraMode === "overview" || cameraMode === "system")}
+        enableDamping={!capturing}
         dampingFactor={0.08}
         minDistance={cameraMode !== "overview" && cameraMode !== "system" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
         maxDistance={cameraMode === "system" ? 1e9 : Math.max(fit, 16) * 30}
@@ -517,6 +535,7 @@ export function OrbitView({
         bodyRadiusKm={bodyRadiusKm ?? 0}
         obstacles={obstacles}
         onCameraMode={onCameraMode}
+        exporting={exporting}
       />
       <SceneLabels
         centerLabel={centerLabel}

@@ -1,10 +1,27 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { covers, liveSeconds, orbitCenter } from "../core";
 import { displayedState } from "../core/ephemeris/craft";
 import { arcsForCenter } from "../session";
 import type { EphemerisSession } from "../useEphemeris";
 import { Clock } from "./Clock";
+import type { CaptureHandle } from "./CaptureBridge";
+import {
+  EXPORT_FRAME_CAP,
+  downloadBlob,
+  frameStep,
+  frameTimes,
+  nextWindow,
+  sequenceName,
+  stillName,
+  STILL_HEIGHT,
+  STILL_WIDTH,
+  windowEnd,
+} from "./capture";
+import { exportSequence } from "./exportFrames";
+import { FlareControls } from "./FlareControls";
+import { FLARE_DEBUG, loadFlareTune } from "./flareTune";
+import type { FlareTune } from "./flareTune";
 import { EphemerisPanel } from "./EphemerisPanel";
 import { LeaveMenu } from "./LeaveMenu";
 import type { TrajectoryLine } from "./OrbitView";
@@ -61,6 +78,34 @@ export function Viewer({
   const neighborB = useRef<HTMLSpanElement>(null);
   const neighborC = useRef<HTMLSpanElement>(null);
   const neighborLabelEls = useMemo(() => [neighborA, neighborB, neighborC], []);
+  const storedTune = useRef<FlareTune | null>(null);
+  if (storedTune.current == null) storedTune.current = loadFlareTune();
+  const flareTuneRef = storedTune as RefObject<FlareTune>;
+  const captureRef = useRef<CaptureHandle | null>(null);
+  const cancelRef = useRef(false);
+  const runRef = useRef(0);
+  const busyRef = useRef(false);
+  const [trim, setTrim] = useState<{ start: number; end: number } | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [captureNote, setCaptureNote] = useState<string | null>(null);
+  const spanRef = useRef(session.span);
+  spanRef.current = session.span;
+
+  useEffect(() => {
+    const coverage = spanRef.current;
+    setTrim((current) => {
+      if (!current || !coverage) return current;
+      const end = windowEnd(current.start, frameStep(session.speed), coverage.stop);
+      return end === current.end ? current : { start: current.start, end };
+    });
+  }, [session.speed]);
+
+  useEffect(() => {
+    setTrim(null);
+    setProgress(null);
+    cancelRef.current = true;
+  }, [file]);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 720px)");
@@ -89,6 +134,90 @@ export function Viewer({
   const isoTime = utc?.text ?? null;
   const timeNote = utc?.dubious ? "· leap table expired" : null;
   const viewing = gate === "view";
+  const exportStep = frameStep(session.speed);
+  const exportFrames = trim ? frameTimes(trim.start, trim.end, exportStep) : [];
+
+  async function shoot() {
+    const capture = captureRef.current;
+    if (!capture || busyRef.current) {
+      if (!capture) setCaptureNote("The view is not ready.");
+      return;
+    }
+    busyRef.current = true;
+    setCapturing(true);
+    setCaptureNote(null);
+    try {
+      const blob = await capture.shot(STILL_WIDTH, STILL_HEIGHT);
+      downloadBlob(blob, stillName(isoTime));
+    } catch (error) {
+      setCaptureNote(error instanceof Error ? error.message : "The screenshot could not be saved.");
+    } finally {
+      busyRef.current = false;
+      setCapturing(false);
+    }
+  }
+
+  function toggleTrim() {
+    if (busyRef.current) return;
+    if (trim) {
+      setTrim(null);
+      setCaptureNote(null);
+      return;
+    }
+    const coverage = session.span;
+    if (!coverage || coverage.stop <= coverage.start) return;
+    const start = Math.min(coverage.stop, Math.max(coverage.start, session.t));
+    setCaptureNote(null);
+    setTrim({ start, end: windowEnd(start, exportStep, coverage.stop) });
+  }
+
+  async function saveFrames() {
+    if (busyRef.current) return;
+    const capture = captureRef.current;
+    const window = trim;
+    const coverage = session.span;
+    if (!capture || !window || !coverage || !file) {
+      setCaptureNote("The view is not ready.");
+      return;
+    }
+    if (session.playing) session.togglePlay();
+    const restore = session.clockRef.current.t;
+    const times = frameTimes(window.start, window.end, exportStep);
+    const id = runRef.current + 1;
+    runRef.current = id;
+    cancelRef.current = false;
+    busyRef.current = true;
+    setCapturing(true);
+    setProgress({ done: 1, total: times.length });
+    setCaptureNote(null);
+    const stamp = formatEpoch(file, window.start)?.text ?? isoTime;
+    try {
+      const saved = await exportSequence({
+        capture,
+        times,
+        name: sequenceName(stamp),
+        seek: session.seek,
+        onFrame: (done, total) => {
+          if (runRef.current === id) setProgress({ done, total });
+        },
+        cancelled: () => cancelRef.current || runRef.current !== id,
+      });
+      if (saved && runRef.current === id) {
+        setTrim(nextWindow(window.start, window.end, exportStep, coverage.stop, times.length));
+      }
+    } catch (error) {
+      if (runRef.current === id) {
+        setCaptureNote(error instanceof Error ? error.message : "The frames could not be saved.");
+      }
+    } finally {
+      if (runRef.current === id) {
+        busyRef.current = false;
+        setCapturing(false);
+        setProgress(null);
+        session.seek(restore);
+      }
+    }
+  }
 
   return (
     <>
@@ -117,6 +246,9 @@ export function Viewer({
               cameraMode={cameraMode}
               onCameraMode={setCameraMode}
               neighborLabelEls={neighborLabelEls}
+              flareTune={flareTuneRef}
+              capture={captureRef}
+              capturing={capturing}
             />
           </Suspense>
         ) : (
@@ -179,7 +311,25 @@ export function Viewer({
           onLive={session.goLive}
           cameraMode={cameraMode}
           onCameraMode={setCameraMode}
+          capture={{
+            busy: capturing,
+            progress,
+            note: captureNote,
+            trim,
+            frames: exportFrames.length,
+            maxSpan: exportStep * (EXPORT_FRAME_CAP - 1),
+            onShot: () => void shoot(),
+            onVideo: toggleTrim,
+            onSave: () => void saveFrames(),
+            onCancel: () => {
+              cancelRef.current = true;
+            },
+            onTrim: (start, end) => setTrim({ start, end }),
+          }}
         />
+      )}
+      {FLARE_DEBUG && viewing && session.webgl && (
+        <FlareControls tune={flareTuneRef} realistic={renderStyle === "realistic"} />
       )}
       {viewing && (
         <Visualization

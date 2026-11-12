@@ -147,6 +147,7 @@ export function CameraDirector({
   bodyRadiusKm,
   obstacles,
   onCameraMode,
+  exporting,
 }: {
   pose: RefObject<CraftPose | null>;
   mode: CameraMode;
@@ -154,6 +155,8 @@ export function CameraDirector({
   /** Neighbor bodies. The origin body is handled with `bodyRadiusKm`. */
   obstacles: RefObject<readonly SphereObstacle[]>;
   onCameraMode: (mode: CameraMode) => void;
+  /** While a frame is being saved, cinematic motion snaps instead of easing a frame behind. */
+  exporting?: RefObject<boolean>;
 }) {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -241,7 +244,7 @@ export function CameraDirector({
           }
         } else {
           adoptZoom(camera, look, zoom, applied);
-          const step = 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
+          const step = exporting?.current ? 1 : 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
           if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look, bodyRadiusKm);
           else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look, bodyRadiusKm);
         }

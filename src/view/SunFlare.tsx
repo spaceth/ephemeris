@@ -4,9 +4,8 @@
  * (ektogamat/R3F-Ultimate-Lens-Flare, CC0), wired to the postprocessing stack
  * this app already runs. Shown while Realistic is on and a Sun disk is in
  * the scene. The flare follows that disk, at the origin or in orbit.
- * The disk is white. A tight glow sits on it and brightens as the camera
- * closes in. An anamorphic lens term is tinted cool. Ghosts, streaks, and
- * the starburst stay off.
+ * The disk is white. Glow, glare, and a small ghost term come from
+ * FLARE_DEFAULTS. The starburst stays off. FLARE_DEBUG shows the tuning panel.
  */
 import { useTexture } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
@@ -14,7 +13,10 @@ import { EffectComposer } from "@react-three/postprocessing";
 import { easing } from "maath";
 import { BlendFunction, Effect } from "postprocessing";
 import { useEffect, useMemo, useRef } from "react";
+import type { RefObject } from "react";
 import * as THREE from "three";
+import { FLARE_DEFAULTS } from "./flareTune";
+import type { FlareTune } from "./flareTune";
 
 const LENS_DIRT = "/textures/lens-dirt.jpg";
 useTexture.preload(LENS_DIRT);
@@ -68,12 +70,6 @@ uniform float iTime;
   void mainImage(vec4 v,vec2 r,out vec4 i){vec2 g=r-.5;g.y*=iResolution.y/iResolution.x;vec2 l=lensPosition*.5;l.y*=iResolution.y/iResolution.x;float dSun=length(g-l);vec3 f=vec3(exp(-dSun*dSun/max(flareSpread,0.0001)))*flareGain;f+=mLs(g,l)*optical*colorGain;if(aditionalStreaks){vec3 o=vec3(.9,.2,.1),p=vec3(.3,.1,.9);for(float n=0.;n<10.;n++)f+=drC(g,pow(rnd(n*2e3)*2.8,.1)+1.41,0.,o+n,p+n,rnd(n*20.)*3.+.2-.5,lensPosition);}if(secondaryGhosts){vec3 n=vec3(0);n+=rHx(g,-lensPosition*.25,ghostScale*1.4,vec3(.25,.35,0));n+=rHx(g,lensPosition*.25,ghostScale*.5,vec3(1,.5,.5));n+=rHx(g,lensPosition*.1,ghostScale*1.6,vec3(1));n+=rHx(g,lensPosition*1.8,ghostScale*2.,vec3(0,.5,.75));n+=rHx(g,lensPosition*1.25,ghostScale*.8,vec3(1,1,.5));n+=rHx(g,-lensPosition*1.25,ghostScale*5.,vec3(.5,.5,.25));n+=fpow(1.-abs(distance(lensPosition*.8,g)-.7),.985)*colorGain/2100.;f+=n;}if(starBurst){vxtC=g+.5;vec4 n=geLD(g);float o=1.-clamp(0.5,0.,.5)*2.;n+=mix(n,pow(n*2.,vec4(2))*.5,o);float s=(g.x+g.y)*(1./6.);vec2 d=mat2(cos(s),-sin(s),sin(s),cos(s))*vxtC;n+=geLS(d)*2.;f+=clamp(n.xyz*strB().xyz,0.0,1.);}i=enabled?vec4(mix(f,vec3(0),opacity)+v.xyz,v.w):vec4(v);}
 `;
 
-/** 0 is the full effect, 1 hides it. */
-const FLARE_COVER = 0;
-/** Flare at a distant Sun. Rises to FLARE_NEAR as the disk fills the view. */
-const FLARE_FAR = 0.04;
-const FLARE_NEAR = 2;
-
 function shown(object: THREE.Object3D): boolean {
   for (let current: THREE.Object3D | null = object; current; current = current.parent) {
     if (!current.visible) return false;
@@ -97,14 +93,17 @@ function diskRadius(mesh: THREE.Mesh): number {
   return typeof radius === "number" && radius > 0 ? radius : 0;
 }
 
-/** 0 while the Sun is small on screen, 1 once it fills the frame. */
-function zoomFlare(camera: THREE.Camera, radiusKm: number, sun: THREE.Vector3): number {
-  if (!(camera instanceof THREE.PerspectiveCamera) || radiusKm <= 0) return FLARE_FAR;
+/** Glow for the Sun's size on screen, from flareFar to flareNear. */
+function zoomFlare(camera: THREE.Camera, radiusKm: number, sun: THREE.Vector3, tune: FlareTune): number {
+  if (!(camera instanceof THREE.PerspectiveCamera) || radiusKm <= 0) return tune.flareFar;
   const dist = Math.max(camera.position.distanceTo(sun), 1);
   const half = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
   const ndc = radiusKm / dist / half;
-  const t = THREE.MathUtils.smoothstep(ndc, 0.35, 1.15);
-  return THREE.MathUtils.lerp(FLARE_FAR, FLARE_NEAR, t);
+  const span = tune.zoomEnd - tune.zoomStart;
+  const t = span === 0
+    ? (ndc >= tune.zoomEnd ? 1 : 0)
+    : THREE.MathUtils.smoothstep(ndc, tune.zoomStart, tune.zoomEnd);
+  return THREE.MathUtils.lerp(tune.flareFar, tune.flareNear, t);
 }
 
 class LensFlareEffect extends Effect {
@@ -112,29 +111,29 @@ class LensFlareEffect extends Effect {
     super("LensFlareEffect", FRAGMENT, {
       blendFunction: BlendFunction.NORMAL,
       uniforms: new Map<string, THREE.Uniform>([
-        ["enabled", new THREE.Uniform(true)],
-        ["glareSize", new THREE.Uniform(0)],
+        ["enabled", new THREE.Uniform(FLARE_DEFAULTS.enabled)],
+        ["glareSize", new THREE.Uniform(FLARE_DEFAULTS.glareSize)],
         ["lensPosition", new THREE.Uniform(new THREE.Vector2())],
         ["iTime", new THREE.Uniform(0)],
         ["iResolution", new THREE.Uniform(new THREE.Vector2())],
-        ["starPoints", new THREE.Uniform(3)],
-        ["flareSize", new THREE.Uniform(0)],
-        ["flareSpeed", new THREE.Uniform(0)],
-        ["flareShape", new THREE.Uniform(0)],
-        ["animated", new THREE.Uniform(false)],
-        ["anamorphic", new THREE.Uniform(true)],
-        ["colorGain", new THREE.Uniform(new THREE.Vector3(1.12, 1.47, 1.9))],
+        ["starPoints", new THREE.Uniform(FLARE_DEFAULTS.starPoints)],
+        ["flareSize", new THREE.Uniform(FLARE_DEFAULTS.flareSize)],
+        ["flareSpeed", new THREE.Uniform(FLARE_DEFAULTS.flareSpeed)],
+        ["flareShape", new THREE.Uniform(FLARE_DEFAULTS.flareShape)],
+        ["animated", new THREE.Uniform(FLARE_DEFAULTS.animated)],
+        ["anamorphic", new THREE.Uniform(FLARE_DEFAULTS.anamorphic)],
+        ["colorGain", new THREE.Uniform(new THREE.Vector3(FLARE_DEFAULTS.colorR, FLARE_DEFAULTS.colorG, FLARE_DEFAULTS.colorB))],
         ["lensDirtTexture", new THREE.Uniform(dirt)],
-        ["haloScale", new THREE.Uniform(0)],
-        ["secondaryGhosts", new THREE.Uniform(false)],
-        ["aditionalStreaks", new THREE.Uniform(false)],
-        ["ghostScale", new THREE.Uniform(0)],
-        ["starBurst", new THREE.Uniform(false)],
+        ["haloScale", new THREE.Uniform(FLARE_DEFAULTS.haloScale)],
+        ["secondaryGhosts", new THREE.Uniform(FLARE_DEFAULTS.secondaryGhosts)],
+        ["aditionalStreaks", new THREE.Uniform(FLARE_DEFAULTS.aditionalStreaks)],
+        ["ghostScale", new THREE.Uniform(FLARE_DEFAULTS.ghostScale)],
+        ["starBurst", new THREE.Uniform(FLARE_DEFAULTS.starBurst)],
         ["opacity", new THREE.Uniform(1)],
-        ["flareGain", new THREE.Uniform(FLARE_FAR)],
-        ["flareSpread", new THREE.Uniform(0.001)],
-        ["optical", new THREE.Uniform(0.107)],
-        ["glareBoost", new THREE.Uniform(0)],
+        ["flareGain", new THREE.Uniform(FLARE_DEFAULTS.gainFollowsZoom ? FLARE_DEFAULTS.flareFar : FLARE_DEFAULTS.flareGain)],
+        ["flareSpread", new THREE.Uniform(FLARE_DEFAULTS.flareSpread)],
+        ["optical", new THREE.Uniform(FLARE_DEFAULTS.optical)],
+        ["glareBoost", new THREE.Uniform(FLARE_DEFAULTS.glareBoost)],
       ]),
     });
   }
@@ -159,8 +158,35 @@ function coverOf(object: THREE.Object3D): number {
   return 1;
 }
 
+function setUniform(effect: LensFlareEffect, name: string, value: number | boolean) {
+  const uniform = effect.uniforms.get(name);
+  if (uniform) uniform.value = value;
+}
+
+/** Copy the tuning panel onto the shader. Position, time, and cover stay with the frame. */
+function applyFlare(effect: LensFlareEffect, tune: FlareTune) {
+  setUniform(effect, "enabled", tune.enabled);
+  setUniform(effect, "glareSize", tune.glareSize);
+  setUniform(effect, "starPoints", tune.starPoints);
+  setUniform(effect, "flareSize", tune.flareSize);
+  setUniform(effect, "flareSpeed", tune.flareSpeed);
+  setUniform(effect, "flareShape", tune.flareShape);
+  setUniform(effect, "animated", tune.animated);
+  setUniform(effect, "anamorphic", tune.anamorphic);
+  setUniform(effect, "haloScale", tune.haloScale);
+  setUniform(effect, "secondaryGhosts", tune.secondaryGhosts);
+  setUniform(effect, "aditionalStreaks", tune.aditionalStreaks);
+  setUniform(effect, "ghostScale", tune.ghostScale);
+  setUniform(effect, "starBurst", tune.starBurst);
+  setUniform(effect, "flareSpread", tune.flareSpread);
+  setUniform(effect, "optical", tune.optical);
+  setUniform(effect, "glareBoost", tune.glareBoost);
+  const color = effect.uniforms.get("colorGain")?.value;
+  if (color instanceof THREE.Vector3) color.set(tune.colorR, tune.colorG, tune.colorB);
+}
+
 /** Lens flare on the Sun disk. The glow strengthens as the camera closes in. */
-export function SunLensFlare() {
+export function SunLensFlare({ tune }: { tune: RefObject<FlareTune> }) {
   const dirt = useTexture(LENS_DIRT);
   const effect = useMemo(() => new LensFlareEffect(dirt), [dirt]);
   const projected = useRef(new THREE.Vector3());
@@ -170,25 +196,37 @@ export function SunLensFlare() {
   useEffect(() => () => effect.dispose(), [effect]);
 
   useFrame(({ camera, scene, raycaster }, delta) => {
+    const settings = tune.current;
+    applyFlare(effect, settings);
     const gain = effect.uniforms.get("flareGain");
     const lens = effect.uniforms.get("lensPosition")?.value;
     const cover = effect.uniforms.get("opacity");
     if (!(lens instanceof THREE.Vector2) || !cover) return;
+    const smooth = Math.max(settings.coverDamp, 0.001);
 
     const sun = findSun(scene);
     if (!sun) {
-      if (gain) gain.value = FLARE_FAR;
-      easing.damp(cover, "value", 1, 0.07, delta);
+      if (gain) gain.value = settings.gainFollowsZoom ? settings.flareFar : settings.flareGain;
+      easing.damp(cover, "value", 1, smooth, delta);
       return;
     }
 
     sun.getWorldPosition(world.current);
-    if (gain) gain.value = zoomFlare(camera, diskRadius(sun), world.current);
+    if (gain) {
+      gain.value = settings.gainFollowsZoom
+        ? zoomFlare(camera, diskRadius(sun), world.current, settings)
+        : settings.flareGain;
+    }
 
     const projectedPosition = projected.current.copy(world.current).project(camera);
     lens.set(projectedPosition.x, projectedPosition.y);
     if (projectedPosition.z > 1) {
-      easing.damp(cover, "value", 1, 0.07, delta);
+      easing.damp(cover, "value", 1, smooth, delta);
+      return;
+    }
+
+    if (!settings.coverFollowsOcclusion) {
+      cover.value = settings.opacity;
       return;
     }
 
@@ -204,8 +242,8 @@ export function SunLensFlare() {
     const sunDistance = camera.position.distanceTo(world.current);
     const hits = list.length > 0 ? raycaster.intersectObjects(list, false) : [];
     const blocker = hits.find((item) => item.distance < sunDistance);
-    const occluded = blocker ? Math.max(coverOf(blocker.object), FLARE_COVER) : FLARE_COVER;
-    easing.damp(cover, "value", occluded, 0.07, delta);
+    const occluded = blocker ? Math.max(coverOf(blocker.object), settings.flareCover) : settings.flareCover;
+    easing.damp(cover, "value", occluded, smooth, delta);
   });
 
   return (
