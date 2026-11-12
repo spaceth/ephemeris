@@ -276,7 +276,7 @@ All four segments are type 2, frame 1, little-endian. Later segments in the file
 | 301, Moon | 3, EMB | 345,600 (4 d) | 12 | 9132 | position |
 | 399, Earth | 3, EMB | 345,600 (4 d) | 12 | 9132 | position |
 
-Mercury through Pluto exist in the full DE440 file as system barycenters (ids 1, 2, 4–9) relative to the SSB. Those segments are not in this cut. Ids 199 and 299 in the full file are small planet-versus-barycenter offsets and are not served. Id 3 is the Earth–Moon barycenter, not Earth. Id 399 is Earth. The neighbor list therefore maps only EARTH → 399, MOON → 301, EARTH BARYCENTER → 3, SUN → 10, and SOLAR SYSTEM BARYCENTER → 0. From Earth the Moon is drawn. From the Moon the Earth is drawn. From the Sun, Earth and the Moon are drawn. From the Earth–Moon barycenter or the solar-system barycenter, the Sun, Earth, and Moon are drawn. The body at the origin is the center itself and is not drawn a second time. Other centers get no neighbor from this snapshot.
+Mercury through Pluto exist in the full DE440 file as system barycenters (ids 1, 2, 4–9) relative to the SSB. Those segments are not in this cut. Ids 199 and 299 in the full file are small planet-versus-barycenter offsets and are not served. Id 3 is the Earth–Moon barycenter, not Earth. Id 399 is Earth. The neighbor list therefore maps only EARTH → 399, MOON → 301, EARTH BARYCENTER → 3, SUN → 10, and SOLAR SYSTEM BARYCENTER → 0. The Sun is drawn in every scene whose center the snapshot can place. From Earth the Sun and the Moon are drawn. From the Moon the Sun and the Earth are drawn. From the Sun, Earth and the Moon are drawn. From the Earth–Moon barycenter or the solar-system barycenter, the Sun, Earth, and Moon are drawn. The body at the origin is the center itself and is not drawn a second time. The overview far plane is at least \(10^9\,\mathrm{km}\), past 1 AU, so the solar disk is inside the frustum. Other centers get no neighbor from this snapshot.
 
 ### Chebyshev evaluation
 
@@ -414,7 +414,7 @@ Equirectangular maps have the date line at the left and right edges and longitud
 | Moon | `public/textures/moon.jpg` | NASA Scientific Visualization Studio CGI Moon Kit color map, a work of the United States Government, centered on 0° longitude. The crust rotation is the IAU series in section 2. |
 | Sun | none | Untextured sphere of radius 695700 km. |
 | Minimal style | none | Gray sphere, `#3a3a3c`, for the Moon and the planets when the realistic maps are off. |
-| Lens flare | shader in `src/view/SunFlare.tsx` | CC0 shader from ektogamat/R3F-Ultimate-Lens-Flare. Neighbor bodies occlude it. The flare is mounted when the scene center is the Sun. |
+| Lens flare | shader in `src/view/SunFlare.tsx` | CC0 shader from ektogamat/R3F-Ultimate-Lens-Flare. In Realistic view it follows the Sun disk, at the origin or in orbit. Neighbor bodies occlude it. |
 
 No further body maps are shipped. A planet without a texture is not given a spin model.
 

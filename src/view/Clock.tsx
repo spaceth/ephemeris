@@ -5,6 +5,7 @@ import type { CameraMode } from "./camera";
 import { PauseIcon, PlayIcon } from "./icons";
 import { HideButton } from "./HideButton";
 import { useBoxMotion } from "./useBoxMotion";
+import { ISO_UTC_WIDTH, READABLE_UTC_WIDTH } from "./format";
 
 const SPEEDS = [1, 30, 120, 600, 3600] as const;
 
@@ -78,10 +79,14 @@ export function Clock({
           </button>
         )}
         <span className="clock-times">
-          <span className="clock-time nums">{readableTime}</span>
+          <span className="clock-time nums">
+            <span className="clock-sizer" aria-hidden="true">{READABLE_UTC_WIDTH}</span>
+            <span>{readableTime}</span>
+          </span>
           {isoTime && (
             <button type="button" className="clock-iso nums" onClick={() => void navigator.clipboard.writeText(isoTime)}>
-              {isoTime}
+              <span className="clock-sizer" aria-hidden="true">{ISO_UTC_WIDTH}</span>
+              <span>{isoTime}</span>
             </button>
           )}
           {timeNote && <span className="clock-note nums">{timeNote}</span>}

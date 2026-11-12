@@ -9,6 +9,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { CameraDirector } from "./CameraDirector";
 import type { SphereObstacle } from "./CameraDirector";
+import { centerNaif } from "../core/ephemeris/place";
 import { Neighbors } from "./Neighbors";
 import { EarthBody, LitBody, MoonBody, SunBody } from "./Globe";
 import { StarField } from "./Stars";
@@ -405,7 +406,8 @@ function CameraRig({
     camera.up.set(0, 1, 0);
     camera.position.set(radius * 0.2, radius * 0.55, radius * 1.45);
     camera.near = 0.02;
-    camera.far = Math.max(radius * 80, 1e8);
+    // Past 1 AU (1.5e8 km) so the solar disk stays inside the frustum.
+    camera.far = Math.max(radius * 80, 1e9);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
     controls?.target?.set(0, 0, 0);
@@ -462,11 +464,8 @@ export function OrbitView({
     >
       <color attach="background" args={["#000000"]} />
       {realistic && stars && <StarField />}
-      {realistic && centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <>
-          <SunBody radiusKm={bodyRadiusKm} />
-          <SunLensFlare radiusKm={bodyRadiusKm} />
-        </>
+      {centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
+        <SunBody radiusKm={bodyRadiusKm} />
       ) : realistic && centerName === "EARTH" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
         <EarthBody radiusKm={bodyRadiusKm} clock={clock} clouds={clouds} />
       ) : realistic && centerName === "MOON" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
@@ -488,6 +487,7 @@ export function OrbitView({
         reach={reach}
         labelEls={neighborLabelEls}
       />
+      {realistic && centerNaif(centerName) != null && <SunLensFlare />}
       {trajectoryLine !== "hidden" && arcs.map((arc) => (
         <ArcLine
           key={arc.segmentIndex}

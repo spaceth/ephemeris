@@ -33,13 +33,16 @@ const MOON_BODY: NeighborBody = { id: MOON, name: "Moon", radiusKm: 1737.4 };
 const EARTH_BODY: NeighborBody = { id: EARTH, name: "Earth", radiusKm: 6378.137 };
 const SUN_BODY: NeighborBody = { id: SUN, name: "Sun", radiusKm: 695700 };
 
-/** Neighbors drawn for a center. The center body itself is never included. */
+/**
+ * Neighbors drawn for a center. The center body itself is never included.
+ * The Sun is included for every center the Earth–Moon–Sun snapshot can place.
+ */
 export function defaultNeighbors(centerName: string | null): readonly NeighborBody[] {
   const id = centerNaif(centerName);
-  if (id === EARTH) return [MOON_BODY];
-  if (id === MOON) return [EARTH_BODY];
-  if (id === SUN) return [EARTH_BODY, MOON_BODY];
-  if (id === SSB) return [SUN_BODY, EARTH_BODY, MOON_BODY];
-  if (id === EMB) return [SUN_BODY, EARTH_BODY, MOON_BODY];
-  return [];
+  if (id == null) return [];
+  const bodies: NeighborBody[] = [];
+  if (id !== SUN) bodies.push(SUN_BODY);
+  if (id !== EARTH) bodies.push(EARTH_BODY);
+  if (id !== MOON) bodies.push(MOON_BODY);
+  return bodies;
 }

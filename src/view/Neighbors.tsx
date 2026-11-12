@@ -60,6 +60,7 @@ function NeighborMesh({
   clouds: boolean;
   clock: { current: SceneClock };
 }) {
+  if (id === 10) return <SunBody radiusKm={radiusKm} />;
   if (!realistic) {
     return (
       <mesh>
@@ -68,7 +69,6 @@ function NeighborMesh({
       </mesh>
     );
   }
-  if (id === 10) return <SunBody radiusKm={radiusKm} />;
   if (id === 399) return <EarthBody radiusKm={radiusKm} clock={clock} clouds={clouds} />;
   if (id === 301) return <MoonBody radiusKm={radiusKm} clock={clock} />;
   return null;

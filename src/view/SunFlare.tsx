@@ -2,7 +2,8 @@
  * Screen-space lens flare for the Sun.
  * Shader and occlusion behavior are Anderson Mancini's R3F Ultimate Lens Flare
  * (ektogamat/R3F-Ultimate-Lens-Flare, CC0), wired to the postprocessing stack
- * this app already runs. Shown only while Realistic is rendering the Sun.
+ * this app already runs. Shown while Realistic is on and a Sun disk is in
+ * the scene. The flare follows that disk, at the origin or in orbit.
  * The disk is white. A tight glow sits on it and brightens as the camera
  * closes in. An anamorphic lens term is tinted cool. Ghosts, streaks, and
  * the starburst stay off.
@@ -67,17 +68,39 @@ uniform float iTime;
   void mainImage(vec4 v,vec2 r,out vec4 i){vec2 g=r-.5;g.y*=iResolution.y/iResolution.x;vec2 l=lensPosition*.5;l.y*=iResolution.y/iResolution.x;float dSun=length(g-l);vec3 f=vec3(exp(-dSun*dSun/max(flareSpread,0.0001)))*flareGain;f+=mLs(g,l)*optical*colorGain;if(aditionalStreaks){vec3 o=vec3(.9,.2,.1),p=vec3(.3,.1,.9);for(float n=0.;n<10.;n++)f+=drC(g,pow(rnd(n*2e3)*2.8,.1)+1.41,0.,o+n,p+n,rnd(n*20.)*3.+.2-.5,lensPosition);}if(secondaryGhosts){vec3 n=vec3(0);n+=rHx(g,-lensPosition*.25,ghostScale*1.4,vec3(.25,.35,0));n+=rHx(g,lensPosition*.25,ghostScale*.5,vec3(1,.5,.5));n+=rHx(g,lensPosition*.1,ghostScale*1.6,vec3(1));n+=rHx(g,lensPosition*1.8,ghostScale*2.,vec3(0,.5,.75));n+=rHx(g,lensPosition*1.25,ghostScale*.8,vec3(1,1,.5));n+=rHx(g,-lensPosition*1.25,ghostScale*5.,vec3(.5,.5,.25));n+=fpow(1.-abs(distance(lensPosition*.8,g)-.7),.985)*colorGain/2100.;f+=n;}if(starBurst){vxtC=g+.5;vec4 n=geLD(g);float o=1.-clamp(0.5,0.,.5)*2.;n+=mix(n,pow(n*2.,vec4(2))*.5,o);float s=(g.x+g.y)*(1./6.);vec2 d=mat2(cos(s),-sin(s),sin(s),cos(s))*vxtC;n+=geLS(d)*2.;f+=clamp(n.xyz*strB().xyz,0.0,1.);}i=enabled?vec4(mix(f,vec3(0),opacity)+v.xyz,v.w):vec4(v);}
 `;
 
-const SUN = new THREE.Vector3();
 /** 0 is the full effect, 1 hides it. */
 const FLARE_COVER = 0;
 /** Flare at a distant Sun. Rises to FLARE_NEAR as the disk fills the view. */
 const FLARE_FAR = 0.04;
 const FLARE_NEAR = 2;
 
+function shown(object: THREE.Object3D): boolean {
+  for (let current: THREE.Object3D | null = object; current; current = current.parent) {
+    if (!current.visible) return false;
+  }
+  return true;
+}
+
+/** The Sun disk marked so it does not occlude its own flare. */
+function findSun(scene: THREE.Scene): THREE.Mesh | null {
+  let sun: THREE.Mesh | null = null;
+  scene.traverse((object) => {
+    if (sun || !(object instanceof THREE.Mesh)) return;
+    if (object.userData.lensflare !== "no-occlusion" || !shown(object)) return;
+    sun = object;
+  });
+  return sun;
+}
+
+function diskRadius(mesh: THREE.Mesh): number {
+  const radius = (mesh.geometry as THREE.SphereGeometry).parameters?.radius;
+  return typeof radius === "number" && radius > 0 ? radius : 0;
+}
+
 /** 0 while the Sun is small on screen, 1 once it fills the frame. */
-function zoomFlare(camera: THREE.Camera, radiusKm: number): number {
+function zoomFlare(camera: THREE.Camera, radiusKm: number, sun: THREE.Vector3): number {
   if (!(camera instanceof THREE.PerspectiveCamera) || radiusKm <= 0) return FLARE_FAR;
-  const dist = Math.max(camera.position.length(), 1);
+  const dist = Math.max(camera.position.distanceTo(sun), 1);
   const half = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
   const ndc = radiusKm / dist / half;
   const t = THREE.MathUtils.smoothstep(ndc, 0.35, 1.15);
@@ -136,24 +159,33 @@ function coverOf(object: THREE.Object3D): number {
   return 1;
 }
 
-/** Lens flare locked to the Sun at the scene origin. The glow strengthens as the camera closes in. */
-export function SunLensFlare({ radiusKm }: { radiusKm: number }) {
+/** Lens flare on the Sun disk. The glow strengthens as the camera closes in. */
+export function SunLensFlare() {
   const dirt = useTexture(LENS_DIRT);
   const effect = useMemo(() => new LensFlareEffect(dirt), [dirt]);
   const projected = useRef(new THREE.Vector3());
+  const world = useRef(new THREE.Vector3());
   const occluders = useRef<THREE.Object3D[]>([]);
 
   useEffect(() => () => effect.dispose(), [effect]);
 
   useFrame(({ camera, scene, raycaster }, delta) => {
     const gain = effect.uniforms.get("flareGain");
-    if (gain) gain.value = zoomFlare(camera, radiusKm);
-
     const lens = effect.uniforms.get("lensPosition")?.value;
     const cover = effect.uniforms.get("opacity");
     if (!(lens instanceof THREE.Vector2) || !cover) return;
 
-    const projectedPosition = projected.current.copy(SUN).project(camera);
+    const sun = findSun(scene);
+    if (!sun) {
+      if (gain) gain.value = FLARE_FAR;
+      easing.damp(cover, "value", 1, 0.07, delta);
+      return;
+    }
+
+    sun.getWorldPosition(world.current);
+    if (gain) gain.value = zoomFlare(camera, diskRadius(sun), world.current);
+
+    const projectedPosition = projected.current.copy(world.current).project(camera);
     lens.set(projectedPosition.x, projectedPosition.y);
     if (projectedPosition.z > 1) {
       easing.damp(cover, "value", 1, 0.07, delta);
@@ -165,11 +197,14 @@ export function SunLensFlare({ radiusKm }: { radiusKm: number }) {
     scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       if (object.userData.lensflare === "no-occlusion") return;
+      if (!shown(object)) return;
       list.push(object);
     });
     raycaster.setFromCamera(lens, camera);
-    const hit = list.length > 0 ? raycaster.intersectObjects(list, false)[0] : undefined;
-    const occluded = hit ? Math.max(coverOf(hit.object), FLARE_COVER) : FLARE_COVER;
+    const sunDistance = camera.position.distanceTo(world.current);
+    const hits = list.length > 0 ? raycaster.intersectObjects(list, false) : [];
+    const blocker = hits.find((item) => item.distance < sunDistance);
+    const occluded = blocker ? Math.max(coverOf(blocker.object), FLARE_COVER) : FLARE_COVER;
     easing.damp(cover, "value", occluded, 0.07, delta);
   });
 

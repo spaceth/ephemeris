@@ -23,15 +23,22 @@ describe("scene depth", () => {
     expect(moon).toBeGreaterThan(craft);
   });
 
-  it("clips a body at 1 AU when far stays at the trajectory floor of 1e8 km", () => {
-    const camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.02, 1e8);
-    camera.position.set(0, 0, 0);
-    camera.lookAt(0, 0, -1);
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld(true);
-    const clip = new THREE.Vector4(0, 0, -1.496e8, 1)
-      .applyMatrix4(camera.matrixWorldInverse)
-      .applyMatrix4(camera.projectionMatrix);
-    expect(clip.z / clip.w).toBeGreaterThan(1);
+  it("keeps a body at 1 AU inside the overview far plane of 1e9 km", () => {
+    const clipped = new THREE.PerspectiveCamera(42, 16 / 9, 0.02, 1e8);
+    const kept = new THREE.PerspectiveCamera(42, 16 / 9, 0.02, 1e9);
+    for (const camera of [clipped, kept]) {
+      camera.position.set(0, 0, 0);
+      camera.lookAt(0, 0, -1);
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
+    }
+    const ndc = (camera: THREE.PerspectiveCamera) => {
+      const clip = new THREE.Vector4(0, 0, -1.496e8, 1)
+        .applyMatrix4(camera.matrixWorldInverse)
+        .applyMatrix4(camera.projectionMatrix);
+      return clip.z / clip.w;
+    };
+    expect(ndc(clipped)).toBeGreaterThan(1);
+    expect(ndc(kept)).toBeLessThan(1);
   });
 });

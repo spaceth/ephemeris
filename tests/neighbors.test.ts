@@ -10,10 +10,12 @@ describe("neighbor defaults", () => {
     expect(centerNaif("JUPITER")).toBeNull();
   });
 
-  it("shows the Moon from Earth and does not repeat the center", () => {
-    expect(defaultNeighbors("EARTH").map((body) => body.id)).toEqual([301]);
-    expect(defaultNeighbors("MOON").map((body) => body.id)).toEqual([399]);
+  it("shows the Sun from every placed center and does not repeat the center", () => {
+    expect(defaultNeighbors("EARTH").map((body) => body.id)).toEqual([10, 301]);
+    expect(defaultNeighbors("MOON").map((body) => body.id)).toEqual([10, 399]);
     expect(defaultNeighbors("SUN").map((body) => body.id)).toEqual([399, 301]);
+    expect(defaultNeighbors("EARTH BARYCENTER").map((body) => body.id)).toEqual([10, 399, 301]);
+    expect(defaultNeighbors("SOLAR SYSTEM BARYCENTER").map((body) => body.id)).toEqual([10, 399, 301]);
     expect(defaultNeighbors("MARS")).toEqual([]);
   });
 });

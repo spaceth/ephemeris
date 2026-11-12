@@ -528,10 +528,23 @@ label.round-control { display: inline-flex; align-items: center; cursor: pointer
   min-width: 0;
 }
 
-.clock-time { font-size: 11px; }
+.clock-time,
+.clock-iso {
+  display: inline-grid;
+  justify-items: start;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.clock-time > *,
+.clock-iso > * { grid-area: 1 / 1; }
+
+.clock-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 .clock-iso {
-  font-size: 11px;
   color: var(--muted);
   text-decoration: underline dotted;
   text-underline-offset: 3px;
