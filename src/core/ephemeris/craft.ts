@@ -6,20 +6,20 @@
  */
 
 import type { OemFile, OemSegment } from "../oem";
-import { toScene } from "../scene";
 import { DAYSEC, formatTaiSeconds, type TaiOrigin } from "../time";
 import type { InterpPlan } from "../interpolate";
 import { stateAt, type StateOk, type StateResult } from "../evaluate";
 import { failure } from "../types";
 import type { ArcBuffer } from "../../session";
 import { readDouble } from "./daf";
+import { nameForNaif } from "./bodies";
 import { openSpk, stateRelative, type SpkKernel } from "./resolve";
 import { J2000_JD, tdbFromTaiClock, TT_MINUS_TAI_SECONDS } from "./scales";
 import { NAIF_FRAME_J2000, type StateQuality } from "./state";
 import type { SpkSegmentSummary } from "./daf";
 
 const SUPPORTED_TYPES = new Set([2, 3, 8, 9, 12, 13]);
-const CHORD_KM = 1.5;
+const CHORD_M = 1500;
 const MAX_DEPTH = 8;
 const ARC_CAP = 20000;
 const BOUNDARY_GAP_S = 1e-6;
@@ -29,30 +29,6 @@ const QUALITY: StateQuality[] = [
   { kind: "native" },
   { kind: "approximate", reason: "tdb-equals-tt" },
 ];
-
-const CENTER_NAME: Readonly<Record<number, string>> = {
-  0: "SOLAR SYSTEM BARYCENTER",
-  1: "MERCURY BARYCENTER",
-  2: "VENUS BARYCENTER",
-  3: "EARTH BARYCENTER",
-  4: "MARS BARYCENTER",
-  5: "JUPITER BARYCENTER",
-  6: "SATURN BARYCENTER",
-  7: "URANUS BARYCENTER",
-  8: "NEPTUNE BARYCENTER",
-  9: "PLUTO BARYCENTER",
-  10: "SUN",
-  199: "MERCURY",
-  299: "VENUS",
-  301: "MOON",
-  399: "EARTH",
-  499: "MARS",
-  599: "JUPITER",
-  699: "SATURN",
-  799: "URANUS",
-  899: "NEPTUNE",
-  999: "PLUTO",
-};
 
 export type CraftWindow = {
   oemIndex: number;
@@ -75,7 +51,7 @@ const bindings = new WeakMap<OemFile, Binding>();
 type Range = { start: number; stop: number };
 
 function centerName(id: number): string {
-  return CENTER_NAME[id] ?? `NAIF ${id}`;
+  return nameForNaif(id);
 }
 
 function originAt(et: number): TaiOrigin {
@@ -240,7 +216,7 @@ type Knot = { t: number; x: number; y: number; z: number };
 function place(kernel: SpkKernel, window: CraftWindow, originEt: number, fileSeconds: number): Knot | null {
   const state = stateRelative([kernel], window.target, window.center, originEt + fileSeconds, "EME2000", QUALITY);
   if (!state.ok) return null;
-  const [x, y, z] = toScene(state.state.positionM[0], state.state.positionM[1], state.state.positionM[2]);
+  const [x, y, z] = state.state.positionM;
   return { t: fileSeconds, x, y, z };
 }
 
@@ -260,7 +236,7 @@ function chord(a: Knot, b: Knot, p: Knot): number {
 function emit(a: Knot, b: Knot, at: (t: number) => Knot | null, out: Knot[], depth: number) {
   const room = out.length < ARC_CAP - 1;
   const mid = room && depth < MAX_DEPTH && b.t - a.t > 1 ? at((a.t + b.t) / 2) : null;
-  if (mid && chord(a, b, mid) > CHORD_KM) {
+  if (mid && chord(a, b, mid) > CHORD_M) {
     emit(a, mid, at, out, depth + 1);
     emit(mid, b, at, out, depth + 1);
     return;
@@ -303,7 +279,7 @@ function continuous(left: ArcBuffer, right: ArcBuffer): boolean {
   const dx = left.positions[n - 3] - right.positions[0];
   const dy = left.positions[n - 2] - right.positions[1];
   const dz = left.positions[n - 1] - right.positions[2];
-  return Math.hypot(dx, dy, dz) * 1000 <= HANDOFF_M;
+  return Math.hypot(dx, dy, dz) <= HANDOFF_M;
 }
 
 function mergeCenter(arcs: ArcBuffer[]): ArcBuffer[] {

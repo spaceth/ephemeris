@@ -1,5 +1,5 @@
 /**
- * Lazy load of the committed Earth–Moon–Sun snapshot.
+ * Lazy load of the committed DE440 cut.
  * A failed fetch leaves planetary placement off. An OEM whose center is
  * already the scene origin still draws.
  */

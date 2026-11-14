@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { CSSProperties } from "react";
 import { useEphemeris } from "./useEphemeris";
 import { AppRoute } from "./view/AppRoute";
-import logo from "../spaceth-dark.svg";
+import logo from "./assets/spaceth-dark.svg";
 
 export function App() {
   const session = useEphemeris();

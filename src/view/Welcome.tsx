@@ -44,7 +44,7 @@ export function Welcome({
         <div className="welcome-col">
           <h2>Select from example</h2>
           <ExamplePicker examples={examples} loading={loading} onExample={onExample} />
-          <p>EM-2, ISS, and CE7, Earth-centered EME2000 ephemerides. LRO, Moon-centered EME2000. DART, Earth then Sun in ICRF.</p>
+          <p>EM-2, ISS, and CE7, Earth-centered EME2000 ephemerides. LRO, Moon-centered EME2000. Juno, Jupiter-barycenter-centered EME2000. DART, Earth then Sun in ICRF.</p>
         </div>
       </div>
       {loading && <p className="meta">Reading…</p>}

@@ -6,9 +6,10 @@
 
 import type { TaiOrigin } from "../time";
 import { toScene } from "../scene";
-import { stateRelative, type SpkKernel } from "./resolve";
+import { place } from "./place";
+import type { SpkKernel } from "./resolve";
 import { tdbFromTaiClock } from "./scales";
-import { SUN, type NaifId, type StateQuality } from "./state";
+import { SUN, type NaifId } from "./state";
 
 let kernel: SpkKernel | null = null;
 
@@ -27,10 +28,9 @@ export function ephemerisSunScene(
 ): [number, number, number] | null {
   if (!kernel || body === SUN) return null;
   const converted = tdbFromTaiClock(origin, taiSeconds);
-  const quality: StateQuality[] = [{ kind: "native" }, converted.quality];
-  const state = stateRelative([kernel], SUN, body, converted.secondsPastJ2000, "EME2000", quality);
-  if (!state.ok) return null;
-  const [x, y, z] = toScene(state.state.positionM[0], state.state.positionM[1], state.state.positionM[2]);
+  const placed = place(SUN, body, [kernel], converted.secondsPastJ2000);
+  if (!placed.ok) return null;
+  const [x, y, z] = toScene(placed.positionM[0], placed.positionM[1], placed.positionM[2]);
   const scale = Math.hypot(x, y, z);
   if (!(scale > 0)) return null;
   return [x / scale, y / scale, z / scale];

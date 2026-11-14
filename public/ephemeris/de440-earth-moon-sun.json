@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "product": "DE440 Earth, Moon, Earth-Moon barycenter, and Sun",
+  "product": "DE440 barycenters 1-9, Sun, Mercury, Venus, Earth-Moon barycenter, Moon, and Earth",
   "source": {
     "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp",
     "sha256": "a4ce9bf9b3282becc9f4b2ac3cebe03a2ae7599981aabd7265fd8482fff7c4b5"
@@ -16,11 +16,38 @@
   "frame": "NAIF frame 1 on this DE440 kernel is ICRF, not dynamical EME2000.",
   "units": "kilometers and kilometers per second in the SPK. The application API converts to meters once.",
   "time": "TDB seconds past J2000. The cut window is the Julian dates of 1950-01-01 and 2050-01-01 at 0h, expanded to native interval boundaries.",
+  "placement": "Ids 499 through 999 are not in this cut. The page adds the circle-rule offset onto barycenters 4 through 9. Mercury 199 and Venus 299 are the native planet-center segments.",
   "requestedWindowEt": [
     -1577880000,
     1577880000
   ],
   "segments": [
+    {
+      "target": 1,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1578052800,
+      "stopEt": 1577966400,
+      "init": -1578052800,
+      "intervalLength": 691200,
+      "recordSize": 44,
+      "count": 4566,
+      "degree": 13
+    },
+    {
+      "target": 2,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1578052800,
+      "stopEt": 1577966400,
+      "init": -1578052800,
+      "intervalLength": 1382400,
+      "recordSize": 32,
+      "count": 2283,
+      "degree": 9
+    },
     {
       "target": 3,
       "center": 0,
@@ -33,6 +60,84 @@
       "recordSize": 41,
       "count": 2283,
       "degree": 12
+    },
+    {
+      "target": 4,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 35,
+      "count": 1142,
+      "degree": 10
+    },
+    {
+      "target": 5,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 26,
+      "count": 1142,
+      "degree": 7
+    },
+    {
+      "target": 6,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 23,
+      "count": 1142,
+      "degree": 6
+    },
+    {
+      "target": 7,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 20,
+      "count": 1142,
+      "degree": 5
+    },
+    {
+      "target": 8,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 20,
+      "count": 1142,
+      "degree": 5
+    },
+    {
+      "target": 9,
+      "center": 0,
+      "frame": 1,
+      "type": 2,
+      "startEt": -1579435200,
+      "stopEt": 1577966400,
+      "init": -1579435200,
+      "intervalLength": 2764800,
+      "recordSize": 20,
+      "count": 1142,
+      "degree": 5
     },
     {
       "target": 10,
@@ -72,11 +177,37 @@
       "recordSize": 41,
       "count": 9132,
       "degree": 12
+    },
+    {
+      "target": 199,
+      "center": 1,
+      "frame": 1,
+      "type": 2,
+      "startEt": -14200747200,
+      "stopEt": 20514081600,
+      "init": -14200747200,
+      "intervalLength": 34714828800,
+      "recordSize": 8,
+      "count": 1,
+      "degree": 1
+    },
+    {
+      "target": 299,
+      "center": 2,
+      "frame": 1,
+      "type": 2,
+      "startEt": -14200747200,
+      "stopEt": 20514081600,
+      "init": -14200747200,
+      "intervalLength": 34714828800,
+      "recordSize": 8,
+      "count": 1,
+      "degree": 1
     }
   ],
   "output": {
     "file": "de440-earth-moon-sun.bsp",
-    "bytes": 7380992,
-    "sha256": "abbcf6d4f99b669d0df389630d9ee6a3ba3e97d5b96418a584bb63c4233036e5"
+    "bytes": 10889216,
+    "sha256": "4925e6f126c79ec565b23281f9d7f571b6de2fe150239e7b9446ba65e55bae81"
   }
 }

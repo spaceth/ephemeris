@@ -37,7 +37,7 @@ export type Coverage = {
 
 export type StateQuality =
   | { kind: "native" }
-  | { kind: "approximate"; reason: "tdb-equals-tt" | "barycenter-drawn-as-body" | "shared-inertial-axes" }
+  | { kind: "approximate"; reason: "tdb-equals-tt" | "barycenter-drawn-as-body" | "barycenter-circle" | "shared-inertial-axes" }
   | { kind: "reconstructed"; reason: "emrat-earth" };
 
 export type CartesianState = {

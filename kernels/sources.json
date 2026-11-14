@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "filename": "de440.bsp",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp",
+      "sha256": "a4ce9bf9b3282becc9f4b2ac3cebe03a2ae7599981aabd7265fd8482fff7c4b5",
+      "path": "data/kernels/de440.bsp",
+      "role": "Barycentric planetary ephemeris. The page loads a cut of this file. The full kernel stays out of git."
+    },
+    {
+      "filename": "gm_de440.tpc",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc",
+      "sha256": "924ddf4fb9ead9fe8a1aa55780bcabde40b09d00065d58226e24b68d8092f140",
+      "path": "data/kernels/gm_de440.tpc",
+      "role": "GM constants copied into the cut manifest for the Earth-Moon check. The page does not read this file."
+    },
+    {
+      "filename": "pck00011.tpc",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+      "sha256": "3dff7b1dbeceaa01f25467767d3fa25816051c85d162d1edf04acb310ee28bb1",
+      "path": "kernels/pck00011.tpc",
+      "role": "Equatorial radii and J2000 poles. The page imports this text kernel. It is the NAIF file, stored under its published name."
+    }
+  ]
+}

@@ -29,15 +29,21 @@ const kernels = loadOrder([snapshot.buffer.slice(snapshot.byteOffset, snapshot.b
  * Native coefficient evaluation against CSPICE N0067 on the same DE440 kernel,
  * aberration NONE, frame J2000 (ICRF for this product). The committed snapshot
  * is a byte copy of the overlapping type 2 records.
- * Measured over these epochs: 1.05e-5 m in position and 3.7e-12 m/s in velocity.
- * That is reference rounding, not a kilometer-level drawing tolerance.
- * TDB≈TT, drawing a barycenter as a body, and Earth orientation are separate.
+ * Measured on the Earth–Moon–Sun cases: 1.05e-5 m in position and 3.7e-12 m/s
+ * in velocity. That is reference rounding, not a kilometer-level drawing tolerance.
+ * A barycenter near Neptune is ~30 AU. Float64 then changes in steps of about
+ * a millimeter, so the same absolute bound is scaled by distance / 10^8 km.
+ * TDB≈TT, the circle-rule planet offset, and Earth orientation are separate.
  */
 const POSITION_M = 2e-5;
 const VELOCITY_MPS = 1e-10;
 
 function meters(km: number): number {
   return km * 1000;
+}
+
+function distanceScale(positionKm: [number, number, number]): number {
+  return Math.max(1, Math.hypot(positionKm[0], positionKm[1], positionKm[2]) / 1e8);
 }
 
 describe("CSPICE DE440 reference", () => {
@@ -51,9 +57,10 @@ describe("CSPICE DE440 reference", () => {
     const got = stateRelative(kernels, sample.target, sample.center, sample.et, "ICRF");
     expect(got.ok, got.ok ? "" : got.message).toBe(true);
     if (!got.ok) return;
+    const scale = distanceScale(sample.positionKm);
     for (let axis = 0; axis < 3; axis += 1) {
-      expect(Math.abs(got.state.positionM[axis] - meters(sample.positionKm[axis]))).toBeLessThan(POSITION_M);
-      expect(Math.abs(got.state.velocityMps[axis] - meters(sample.velocityKmps[axis]))).toBeLessThan(VELOCITY_MPS);
+      expect(Math.abs(got.state.positionM[axis] - meters(sample.positionKm[axis]))).toBeLessThan(POSITION_M * scale);
+      expect(Math.abs(got.state.velocityMps[axis] - meters(sample.velocityKmps[axis]))).toBeLessThan(VELOCITY_MPS * scale);
     }
     expect(got.state.frame).toBe("ICRF");
     expect(got.state.quality).toEqual([{ kind: "native" }]);

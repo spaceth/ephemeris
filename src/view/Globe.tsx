@@ -17,10 +17,12 @@ const EARTH_DAY = "/textures/earth-day.jpg";
 const EARTH_CLOUD = "/textures/earth-cloud-day.jpg";
 const EARTH_NIGHT = "/textures/earth-night.jpg";
 const MOON_COLOR = "/textures/moon.jpg";
+const JUPITER_COLOR = "/textures/jupiter.jpg";
 useTexture.preload(EARTH_DAY);
 useTexture.preload(EARTH_CLOUD);
 useTexture.preload(EARTH_NIGHT);
 useTexture.preload(MOON_COLOR);
+useTexture.preload(JUPITER_COLOR);
 
 /** Atmosphere shell. Wide enough to fade, close enough to stay on the limb. */
 const AIR_SCALE = 1.045;
@@ -242,6 +244,21 @@ export function MoonBody(props: BodyProps) {
     configureMap(map, gl);
   }, [gl, map]);
   return <LitSphere {...props} bodyId={props.bodyId ?? 301} map={map} axes={moonScene} textured />;
+}
+
+/**
+ * Equirectangular Jupiter map from `public/textures/jupiter.jpg`. North on the image is mesh +Y.
+ * No Jupiter attitude series is applied, so that axis stays scene up, the EME2000 pole,
+ * and the map does not rotate. The Sun direction is the snapshot chain through
+ * the Jupiter barycenter when that kernel is loaded.
+ */
+export function JupiterBody(props: BodyProps) {
+  const map = useTexture(JUPITER_COLOR);
+  const gl = useThree((state) => state.gl);
+  useLayoutEffect(() => {
+    configureMap(map, gl);
+  }, [gl, map]);
+  return <LitSphere {...props} bodyId={props.bodyId ?? 599} map={map} axes={null} textured />;
 }
 
 function configureMap(map: THREE.Texture, gl: THREE.WebGLRenderer) {

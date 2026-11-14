@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { covers, liveSeconds, orbitCenter } from "../core";
+import { BODY_LABEL_COUNT } from "../core/ephemeris/bodies";
 import { displayedState } from "../core/ephemeris/craft";
 import { arcsForCenter } from "../session";
 import type { EphemerisSession } from "../useEphemeris";
@@ -55,10 +56,10 @@ export function Viewer({
     () => (file ? arcsForCenter(file, session.arcs, session.segment) : []),
     [file, session.arcs, session.segment],
   );
+  const fit = useMemo(() => trajectoryRadius(shownArcs), [shownArcs]);
   const shown = file?.segments[session.segment];
   const center = shown ? orbitCenter(shown.centerName) : null;
   const bodyRadiusKm = center?.radiusKm ?? null;
-  const fit = useMemo(() => trajectoryRadius(shownArcs), [shownArcs]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [clockOpen, setClockOpen] = useState(true);
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 720px)").matches);
@@ -74,10 +75,11 @@ export function Viewer({
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
   const objectLabelEl = useRef<HTMLSpanElement>(null);
-  const neighborA = useRef<HTMLSpanElement>(null);
-  const neighborB = useRef<HTMLSpanElement>(null);
-  const neighborC = useRef<HTMLSpanElement>(null);
-  const neighborLabelEls = useMemo(() => [neighborA, neighborB, neighborC], []);
+  const neighborLabelEls = useMemo(() => {
+    const slots: RefObject<HTMLSpanElement | null>[] = [];
+    for (let index = 0; index < BODY_LABEL_COUNT; index += 1) slots.push({ current: null });
+    return slots;
+  }, []);
   const storedTune = useRef<FlareTune | null>(null);
   if (storedTune.current == null) storedTune.current = loadFlareTune();
   const flareTuneRef = storedTune as RefObject<FlareTune>;
@@ -225,7 +227,7 @@ export function Viewer({
         {session.webgl ? (
           <Suspense fallback={null}>
             <OrbitView
-              arcs={shownArcs}
+              arcs={session.arcs}
               selected={session.segment}
               clock={session.clockRef}
               fit={fit}
@@ -260,9 +262,9 @@ export function Viewer({
         <span ref={objectLabelEl} className="scene-label">
           {shown?.objectName ?? ""}
         </span>
-        <span ref={neighborA} className="scene-label" />
-        <span ref={neighborB} className="scene-label" />
-        <span ref={neighborC} className="scene-label" />
+        {neighborLabelEls.map((slot, index) => (
+          <span key={index} ref={slot} className="scene-label" />
+        ))}
       </div>
       {viewing && !state.ok && <p className="banner">{state.message}</p>}
       {!viewing && (

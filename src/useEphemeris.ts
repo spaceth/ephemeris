@@ -14,6 +14,7 @@ export const EXAMPLES = [
   { id: "DART", label: "DART", path: "/sample/dart_2021_328_2022_091_rec_v01.oem", fileName: "dart_2021_328_2022_091_rec_v01.oem" },
   { id: "CE7", label: "CE7", path: "/sample/CE7_Trajectory_2027.oem", fileName: "CE7_Trajectory_2027.oem" },
   { id: "LRO", label: "LRO", path: "/sample/lrorg_2009169_2010001_v01.oem", fileName: "lrorg_2009169_2010001_v01.oem" },
+  { id: "JUNO", label: "Juno", path: "/sample/juno-2021-09-25_to_2021-11-08.oem", fileName: "juno-2021-09-25_to_2021-11-08.oem" },
 ] as const;
 
 function webglAvailable(): boolean {

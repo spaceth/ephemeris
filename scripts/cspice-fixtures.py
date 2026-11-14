@@ -55,6 +55,19 @@ def main() -> None:
     add("j2000-sun-ssb", 0.0, 10, 0)
     add("j2000-moon-emb", 0.0, 301, 3)
     add("j2000-earth-emb", 0.0, 399, 3)
+    for target, name in (
+        (1, "mercury-bary-ssb"),
+        (2, "venus-bary-ssb"),
+        (4, "mars-bary-ssb"),
+        (5, "jupiter-bary-ssb"),
+        (6, "saturn-bary-ssb"),
+        (7, "uranus-bary-ssb"),
+        (8, "neptune-bary-ssb"),
+        (9, "pluto-bary-ssb"),
+        (199, "mercury-ssb"),
+        (299, "venus-ssb"),
+    ):
+        add(f"j2000-{name}", 0.0, target, 0)
     boundary = -43200.0
     add("earth-emb-before-boundary", boundary - 1, 399, 3)
     add("earth-emb-boundary", boundary, 399, 3)

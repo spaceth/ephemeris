@@ -4,11 +4,11 @@ import type { SupportedFrame } from "./core/frames";
 import { bracketIndex, interpolateComponent } from "./core/interpolate";
 import type { InterpPlan } from "./core/interpolate";
 import type { OemFile, OemSegment } from "./core/oem";
-import { toScene } from "./core/scene";
 import type { Vec3 } from "./core/types";
 
 export type ArcBuffer = {
   segmentIndex: number;
+  /** Center-relative EME2000 meters. `toScene` runs once, at draw time, after the center is placed. */
   positions: Float32Array;
   /** Seconds from the file origin, one per vertex, so a trail can end at the clock. */
   times: Float32Array;
@@ -22,8 +22,8 @@ export type WorkerResponse =
   | { type: "parsed"; id: number; name: string; file: OemFile; arcs: ArcBuffer[] }
   | { type: "parse-error"; id: number; message: string };
 
-/** Stop refining once a chord sits this close to the interpolant, in scene kilometers. */
-const CHORD_KM = 1.5;
+/** Stop refining once a chord sits this close to the interpolant, in meters. */
+const CHORD_M = 1500;
 const MAX_DEPTH = 8;
 const ARC_CAP = 80000;
 
@@ -44,7 +44,7 @@ function sameCenter(a: string, b: string): boolean {
   return centerKey(a) === centerKey(b);
 }
 
-/** Arcs that share the selected segment's center. Different centers are different origins and are not drawn together. */
+/** Arcs that share the selected segment's center. The camera fit uses this set. Other centers are drawn by placing that center. */
 export function arcsForCenter(file: OemFile, arcs: ArcBuffer[], segmentIndex: number): ArcBuffer[] {
   const selected = file.segments[segmentIndex];
   if (!selected) return [];
@@ -54,7 +54,7 @@ export function arcsForCenter(file: OemFile, arcs: ArcBuffer[], segmentIndex: nu
   });
 }
 
-/** One scene polyline per segment, in center-relative EME2000 kilometers. Samples are refined with the segment interpolant so a close view does not show the chords. */
+/** One polyline per segment, in center-relative EME2000 meters. Samples are refined with the segment interpolant so a close view does not show the chords. */
 export function buildArcs(file: OemFile): ArcBuffer[] {
   const arcs: ArcBuffer[] = [];
   for (const segment of file.segments) {
@@ -99,8 +99,7 @@ function curve(segment: OemSegment, frame: SupportedFrame): Curve {
 
 function knotAt(t: number, frame: SupportedFrame, position: Vec3): Knot {
   const eme = sourceToEme2000(frame, position);
-  const scene = toScene(eme[0], eme[1], eme[2]);
-  return { t, x: scene[0], y: scene[1], z: scene[2] };
+  return { t, x: eme[0], y: eme[1], z: eme[2] };
 }
 
 /** Binary split while the interpolant leaves the straight chord. Linear segments are already straight. */
@@ -126,9 +125,9 @@ function emit(a: Knot, b: Knot, curve: Curve, xyz: number[], times: number[], de
 function splitPoint(a: Knot, b: Knot, curve: Curve): Knot | null {
   const mid = place(curve, (a.t + b.t) / 2);
   if (!mid) return null;
-  if (segmentDistance(a, b, mid) > CHORD_KM) return mid;
+  if (segmentDistance(a, b, mid) > CHORD_M) return mid;
   const quarter = place(curve, a.t + (b.t - a.t) * 0.25);
-  if (quarter && segmentDistance(a, b, quarter) > CHORD_KM) return mid;
+  if (quarter && segmentDistance(a, b, quarter) > CHORD_M) return mid;
   return null;
 }
 

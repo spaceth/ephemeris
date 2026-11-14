@@ -7,23 +7,28 @@ import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
+import { orbitCenter } from "../core";
+import { toScene } from "../core/scene";
+import { bodyByName } from "../core/ephemeris/bodies";
+import { centerNaif, placeCenter } from "../core/ephemeris/place";
+import { tdbFromTaiClock } from "../core/ephemeris/scales";
+import { lightingKernel } from "../core/ephemeris/sunLight";
+import { BodyMesh } from "./BodyMesh";
 import { CameraDirector } from "./CameraDirector";
 import { CaptureBridge } from "./CaptureBridge";
 import type { CaptureHandle } from "./CaptureBridge";
 import type { SphereObstacle } from "./CameraDirector";
-import { centerNaif } from "../core/ephemeris/place";
 import { Neighbors } from "./Neighbors";
-import { EarthBody, LitBody, MoonBody, SunBody } from "./Globe";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
 import type { FlareTune } from "./flareTune";
 import type { CameraMode } from "./camera";
 import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
+import { queueSceneLabel, settleSceneLabels } from "./labelLayout";
 import type { SceneClock } from "./types";
 
 const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
-const CENTER_ORIGIN = new Float32Array([0, 0, 0]);
 /** Framebuffer pixels across the strip. The falloff below keeps the bright core near one pixel. */
 const ARC_WIDTH_PX = 2;
 
@@ -205,35 +210,71 @@ function ArcLine({
   return <primitive object={line} />;
 }
 
-function BodySphere({ radiusKm }: { radiusKm: number }) {
-  const geometry = useMemo(() => new THREE.SphereGeometry(radiusKm, 64, 48), [radiusKm]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <mesh geometry={geometry}>
-      <meshBasicMaterial color="#3a3a3c" toneMapped={false} />
-    </mesh>
-  );
+function sceneMeters(meters: Float32Array): Float32Array {
+  const out = new Float32Array(meters.length);
+  for (let i = 0; i < meters.length; i += 3) {
+    const [x, y, z] = toScene(meters[i], meters[i + 1], meters[i + 2]);
+    out[i] = x;
+    out[i + 1] = y;
+    out[i + 2] = z;
+  }
+  return out;
 }
 
-function OriginMark() {
-  const map = useMemo(() => circleTexture(), []);
-  useEffect(() => () => map.dispose(), [map]);
+/** One segment arc. Vertices stay center-relative. The group is the center, placed once per frame. */
+function PlacedArc({
+  arc,
+  viewingCenter,
+  opacity,
+  color,
+  trail,
+  clock,
+  reach,
+}: {
+  arc: ArcBuffer;
+  viewingCenter: string | null;
+  opacity: number;
+  color: string;
+  trail: boolean;
+  clock: { current: SceneClock };
+  reach: RefObject<number>;
+}) {
+  const positions = useMemo(() => sceneMeters(arc.positions), [arc]);
+  const localReach = useMemo(() => {
+    let radius = 0;
+    for (let i = 0; i < positions.length; i += 3) {
+      radius = Math.max(radius, Math.hypot(positions[i], positions[i + 1], positions[i + 2]));
+    }
+    return radius;
+  }, [positions]);
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const node = group.current;
+    if (!node) return;
+    const file = clock.current.file;
+    const origin = file?.origin ?? null;
+    if (!origin) {
+      node.visible = false;
+      return;
+    }
+    const segmentCenter = file?.segments[arc.segmentIndex]?.centerName ?? null;
+    const et = tdbFromTaiClock(origin, clock.current.t);
+    const kernel = lightingKernel();
+    const placed = placeCenter(segmentCenter, viewingCenter, kernel ? [kernel] : [], et.secondsPastJ2000);
+    if (!placed.ok) {
+      node.visible = false;
+      return;
+    }
+    const [x, y, z] = toScene(placed.positionM[0], placed.positionM[1], placed.positionM[2]);
+    node.position.set(x, y, z);
+    node.visible = true;
+    const span = Math.hypot(x, y, z) + localReach;
+    if (span > reach.current) reach.current = span;
+  });
   return (
-    <points frustumCulled={false}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[CENTER_ORIGIN, 3]} />
-      </bufferGeometry>
-      <pointsMaterial
-        map={map}
-        color="#a1a1a6"
-        size={8}
-        sizeAttenuation={false}
-        transparent
-        alphaTest={0.5}
-        toneMapped={false}
-        depthTest={false}
-      />
-    </points>
+    <group ref={group} visible={false}>
+      <ArcLine positions={positions} times={arc.times} opacity={opacity} color={color} trail={trail} clock={clock} />
+    </group>
   );
 }
 
@@ -318,6 +359,7 @@ function placeLabel(
   liftPx: number,
   scratch: THREE.Vector3,
   forward: THREE.Vector3,
+  pinned: boolean,
 ) {
   if (!el) return;
   if (!show) {
@@ -333,8 +375,7 @@ function placeLabel(
   const pixel = Math.max(pixelRatio, 1);
   const x = Math.round((scratch.x * 0.5 + 0.5) * size.width * pixel) / pixel;
   const y = Math.round(((-scratch.y * 0.5 + 0.5) * size.height - liftPx) * pixel) / pixel;
-  el.style.visibility = "visible";
-  el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, calc(-100% - 8px))`;
+  queueSceneLabel(el, x, y, pinned);
 }
 
 /** Screen-space names. The center sits just above its limb; a point sits just above the mark. */
@@ -377,6 +418,7 @@ function SceneLabels({
       limbLiftPx(camera, radiusKm, size.height),
       scratch,
       forward,
+      true,
     );
     const sample = pose.current;
     placeLabel(
@@ -389,8 +431,17 @@ function SceneLabels({
       0,
       scratch,
       forward,
+      false,
     );
   });
+  return null;
+}
+
+/** Runs after the names are queued, so a covering label can be moved aside. */
+function LabelSettle() {
+  useFrame(() => {
+    settleSceneLabels();
+  }, 1);
   return null;
 }
 
@@ -468,6 +519,10 @@ export function OrbitView({
   const obstacles = useRef<SphereObstacle[]>([]);
   const reach = useRef(0);
   const exporting = useRef(false);
+  const centerBody = useMemo(() => {
+    const known = centerName ? orbitCenter(centerName) : null;
+    return known ? bodyByName(known.name) : null;
+  }, [centerName]);
   return (
     <Canvas
       className="stage"
@@ -482,19 +537,7 @@ export function OrbitView({
       />
       <color attach="background" args={["#000000"]} />
       {realistic && stars && <StarField />}
-      {centerName === "SUN" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <SunBody radiusKm={bodyRadiusKm} />
-      ) : realistic && centerName === "EARTH" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <EarthBody radiusKm={bodyRadiusKm} clock={clock} clouds={clouds} />
-      ) : realistic && centerName === "MOON" && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <MoonBody radiusKm={bodyRadiusKm} clock={clock} />
-      ) : realistic && bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <LitBody radiusKm={bodyRadiusKm} clock={clock} />
-      ) : bodyRadiusKm != null && bodyRadiusKm > 0 ? (
-        <BodySphere radiusKm={bodyRadiusKm} />
-      ) : (
-        <OriginMark />
-      )}
+      <BodyMesh record={centerBody} radiusKm={bodyRadiusKm} realistic={realistic} clouds={clouds} clock={clock} />
       <Neighbors
         clock={clock}
         centerName={centerName}
@@ -507,14 +550,15 @@ export function OrbitView({
       />
       {realistic && centerNaif(centerName) != null && <SunLensFlare tune={flareTune} />}
       {trajectoryLine !== "hidden" && arcs.map((arc) => (
-        <ArcLine
+        <PlacedArc
           key={arc.segmentIndex}
-          positions={arc.positions}
-          times={arc.times}
+          arc={arc}
+          viewingCenter={centerName}
           opacity={arc.segmentIndex === selected ? 0.95 : 0.32}
           color={trajectoryColor}
           trail={trajectoryLine === "trail"}
           clock={clock}
+          reach={reach}
         />
       ))}
       <CraftProbe clock={clock} pose={pose} />
@@ -526,7 +570,7 @@ export function OrbitView({
         enableDamping={!capturing}
         dampingFactor={0.08}
         minDistance={cameraMode !== "overview" && cameraMode !== "system" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
-        maxDistance={cameraMode === "system" ? 1e9 : Math.max(fit, 16) * 30}
+        maxDistance={cameraMode === "system" || centerNaif(centerName) != null ? 1e9 : Math.max(fit, 16) * 30}
       />
       <CameraRig fit={fit} reach={reach} resetToken={resetToken} mode={cameraMode} />
       <CameraDirector
@@ -547,6 +591,7 @@ export function OrbitView({
         centerEl={centerLabelEl}
         craftEl={objectLabelEl}
       />
+      <LabelSettle />
     </Canvas>
   );
 }

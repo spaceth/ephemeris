@@ -437,8 +437,8 @@ describe("orbit line", () => {
       const state = stateAt(file, start + ((stop - start) * step) / 16, 0);
       expect(state.ok).toBe(true);
       if (!state.ok || !state.eme2000PositionM) continue;
-      const [x, y, z] = toScene(state.eme2000PositionM[0], state.eme2000PositionM[1], state.eme2000PositionM[2]);
-      expect(nearest(arc.positions, x, y, z)).toBeLessThan(2);
+      const [x, y, z] = state.eme2000PositionM;
+      expect(nearest(arc.positions, x, y, z)).toBeLessThan(2000);
     }
   });
 
@@ -518,7 +518,11 @@ describe("orbit centers", () => {
     expect(centerKey("  earth   barycenter ")).toBe("EARTH BARYCENTER");
     expect(orbitCenter("PHOBOS")).toBeNull();
     expect(orbitCenter("EARTH")?.radiusKm).toBeCloseTo(6378.137, 3);
+    expect(orbitCenter("EARTH")?.radiusKm).not.toBeCloseTo(6378.1366, 6);
     expect(orbitCenter("SUN")?.radiusKm).toBe(695700);
+    expect(orbitCenter("MERCURY")?.radiusKm).toBeCloseTo(2440.53, 2);
+    expect(orbitCenter("MOON")?.radiusKm).toBeCloseTo(1737.4, 1);
+    expect(orbitCenter("PLUTO")?.radiusKm).toBeCloseTo(1188.3, 1);
     expect(orbitCenter("65803 DIDYMOS/DIMORPHOS")?.radiusKm).toBeNull();
   });
 
@@ -580,7 +584,7 @@ META_STOP
   });
 
   it("reads the DART reconstruction and keeps Earth and Sun apart", () => {
-    const file = parseOem(readFileSync(new URL("../dart_2021_328_2022_091_rec_v01.oem", import.meta.url), "utf8"));
+    const file = parseOem(readFileSync(new URL("../public/sample/dart_2021_328_2022_091_rec_v01.oem", import.meta.url), "utf8"));
     expect(file.segments.length).toBeGreaterThan(2);
     expect(file.segments[0].objectName).toBe("DART");
     expect(file.segments[0].centerName).toBe("EARTH");
@@ -602,8 +606,8 @@ META_STOP
 });
 
 describe("sample OEM", () => {
-  const file = parseOem(readFileSync(new URL("../example.oem", import.meta.url), "utf8"));
-  const ce7 = parseOem(readFileSync(new URL("../CE7_Trajectory_2027.oem", import.meta.url), "utf8"));
+  const file = parseOem(readFileSync(new URL("../public/sample/EM2.oem", import.meta.url), "utf8"));
+  const ce7 = parseOem(readFileSync(new URL("../public/sample/CE7_Trajectory_2027.oem", import.meta.url), "utf8"));
 
   it("reads the EM-2 file and recovers the first state", () => {
     expect(file.segments[0].objectName).toBe("EM2");
@@ -637,13 +641,25 @@ describe("sample OEM", () => {
   });
 
   it("reads the LRO ephemeris as Moon-centered EME2000", () => {
-    const lro = parseOem(readFileSync(new URL("../lrorg_2009169_2010001_v01.oem", import.meta.url), "utf8"));
+    const lro = parseOem(readFileSync(new URL("../public/sample/lrorg_2009169_2010001_v01.oem", import.meta.url), "utf8"));
     expect(lro.segments).toHaveLength(197);
     expect(lro.segments.every((segment) => segment.objectName === "LUNAR RECONNAISSANCE ORBITER")).toBe(true);
     expect(lro.segments.every((segment) => segment.centerName === "MOON" && segment.refFrame === "EME2000")).toBe(true);
     expect(lro.segments.every((segment) => segment.calculationSupported)).toBe(true);
     const first = lro.segments[0].samples[0];
     expect(stateAt(lro, first.t ?? 0, 0).ok).toBe(true);
+  }, 120_000);
+
+  it("reads the Juno ephemeris as Jupiter-barycenter-centered EME2000", () => {
+    const juno = parseOem(readFileSync(new URL("../public/sample/juno-2021-09-25_to_2021-11-08.oem", import.meta.url), "utf8"));
+    expect(juno.segments).toHaveLength(3);
+    expect(juno.segments.every((segment) => segment.objectName === "JUNO")).toBe(true);
+    expect(juno.segments.every((segment) => segment.centerName === "JUPITER BARYCENTER" && segment.refFrame === "EME2000")).toBe(true);
+    expect(juno.segments.every((segment) => segment.calculationSupported)).toBe(true);
+    const first = juno.segments[0].samples[0];
+    const state = stateAt(juno, first.t ?? 0, 0);
+    expect(state.ok).toBe(true);
+    if (state.ok) expect(state.positionM[0]).toBeCloseTo(1.616979132320e6 * 1000, 3);
   }, 120_000);
 });
 
