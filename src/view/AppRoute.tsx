@@ -4,6 +4,7 @@ import { EXAMPLES } from "../useEphemeris";
 import type { EphemerisSession } from "../useEphemeris";
 import { preloadViewer, Viewer } from "./Viewer";
 import { Welcome } from "./Welcome";
+import { SOLAR_VIEW } from "./solar";
 import { useViewGate } from "./useViewGate";
 
 /** Welcome at rest, then the viewer once a file is open. The 3D scene stays in its own chunk. */
@@ -14,12 +15,12 @@ export function AppRoute({
   session: EphemerisSession;
   onChrome: (style: CSSProperties) => void;
 }) {
-  const gate = useViewGate(session.file);
+  const gate = useViewGate(session.file ?? (session.solar ? SOLAR_VIEW : null));
   const welcome = gate === "welcome" || gate === "leave";
 
   useEffect(() => {
-    if (session.file || session.loading) preloadViewer();
-  }, [session.file, session.loading]);
+    if (session.file || session.solar || session.loading) preloadViewer();
+  }, [session.file, session.loading, session.solar]);
 
   useEffect(() => {
     const win = window;
@@ -34,7 +35,7 @@ export function AppRoute({
   return (
     <>
       {welcome && <div className="welcome-bg" />}
-      {!welcome && session.file && (gate === "open" || gate === "view") && (
+      {!welcome && (session.file || session.solar) && (gate === "open" || gate === "view") && (
         <Viewer session={session} gate={gate} onChrome={onChrome} />
       )}
       {welcome && (
@@ -46,6 +47,7 @@ export function AppRoute({
           leaving={gate === "leave"}
           onPick={(event) => void session.onPick(event)}
           onExample={(id) => void session.loadExample(id)}
+          onExplore={session.openSolar}
         />
       )}
     </>

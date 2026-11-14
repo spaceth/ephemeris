@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { orbitCenter } from "../src/core/centers";
+import { bodyLabelKind, centerLabelKind } from "../src/core/ephemeris/bodies";
 import { centerNaif, defaultNeighbors } from "../src/core/ephemeris/place";
 
 describe("neighbor centers", () => {
@@ -26,5 +27,19 @@ describe("neighbor centers", () => {
     expect(defaultNeighbors("MOON").find((body) => body.id === 399)?.radiusKm).toBe(orbitCenter("EARTH")?.radiusKm);
     expect(defaultNeighbors("EARTH").find((body) => body.id === 10)?.radiusKm).toBe(orbitCenter("SUN")?.radiusKm);
     expect(defaultNeighbors("EARTH").find((body) => body.id === 301)?.radiusKm).toBe(orbitCenter("MOON")?.radiusKm);
+  });
+
+  it("groups names into sun, planet, moon, barycenter, and Lagrange", () => {
+    expect(bodyLabelKind(10)).toBe("sun");
+    expect(bodyLabelKind(399)).toBe("planet");
+    expect(bodyLabelKind(599)).toBe("planet");
+    expect(bodyLabelKind(301)).toBe("moon");
+    expect(bodyLabelKind(501)).toBe("moon");
+    expect(bodyLabelKind(5)).toBe("barycenter");
+    expect(centerLabelKind("EARTH")).toBe("planet");
+    expect(centerLabelKind("Jupiter Barycenter")).toBe("barycenter");
+    expect(centerLabelKind("EARTH-MOON L2")).toBe("lagrange");
+    expect(centerLabelKind("SUN-EARTH L1")).toBe("lagrange");
+    expect(centerLabelKind("CERES")).toBeNull();
   });
 });

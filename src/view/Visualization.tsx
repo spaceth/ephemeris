@@ -1,38 +1,43 @@
 import { useRef, useState } from "react";
+import type { BodyLabelKind } from "../core/ephemeris/bodies";
 import type { TrajectoryLine } from "./OrbitView";
+import { ORBIT_PILLS } from "./orbitTrack";
+import type { OrbitLineId, OrbitToggles } from "./orbitTrack";
 import { HideButton } from "./HideButton";
 import { useBoxMotion } from "./useBoxMotion";
 
-export type NameDisplay = "shown" | "hidden";
+export type LabelKind = "object" | BodyLabelKind;
+export type LabelToggles = Record<LabelKind, boolean>;
 export type RenderStyle = "minimal" | "realistic";
-export type Clouds = "on" | "off";
-export type Stars = "on" | "off";
 
 const LINES: { id: TrajectoryLine; label: string }[] = [
-  { id: "all", label: "All" },
+  { id: "all", label: "Full Path" },
   { id: "trail", label: "Trail" },
   { id: "short", label: "Short Trail" },
   { id: "hidden", label: "Hidden" },
 ];
 
-const NAMES: { id: NameDisplay; label: string }[] = [
-  { id: "shown", label: "Shown" },
-  { id: "hidden", label: "Hidden" },
+export const DEFAULT_LABELS: LabelToggles = {
+  object: true,
+  sun: true,
+  planet: true,
+  moon: true,
+  barycenter: true,
+  lagrange: true,
+};
+
+const LABELS: { id: LabelKind; label: string }[] = [
+  { id: "object", label: "Object" },
+  { id: "sun", label: "Sun" },
+  { id: "planet", label: "Planet" },
+  { id: "moon", label: "Moon" },
+  { id: "barycenter", label: "Barycenter" },
+  { id: "lagrange", label: "Lagrange" },
 ];
 
 const STYLES: { id: RenderStyle; label: string }[] = [
   { id: "minimal", label: "Minimal" },
   { id: "realistic", label: "Realistic" },
-];
-
-const CLOUDS: { id: Clouds; label: string }[] = [
-  { id: "on", label: "On" },
-  { id: "off", label: "Off" },
-];
-
-const STARS: { id: Stars; label: string }[] = [
-  { id: "on", label: "On" },
-  { id: "off", label: "Off" },
 ];
 
 /** `#RGB` and `#RRGGBB`, with or without the hash, as a six-digit CSS color. */
@@ -47,16 +52,17 @@ export function Visualization({
   open,
   line,
   color,
-  objectName,
-  bodyName,
+  labels,
+  orbits,
+  showTrajectory,
   renderStyle,
   clouds,
   stars,
   onToggle,
   onLine,
   onColor,
-  onObjectName,
-  onBodyName,
+  onLabel,
+  onOrbit,
   onRenderStyle,
   onClouds,
   onStars,
@@ -64,23 +70,25 @@ export function Visualization({
   open: boolean;
   line: TrajectoryLine;
   color: string;
-  objectName: NameDisplay;
-  bodyName: NameDisplay;
+  labels: LabelToggles;
+  orbits: OrbitToggles;
+  /** Object path and color. Off in the solar view, which has no spacecraft. */
+  showTrajectory: boolean;
   renderStyle: RenderStyle;
-  clouds: Clouds;
-  stars: Stars;
+  clouds: boolean;
+  stars: boolean;
   onToggle: () => void;
   onLine: (line: TrajectoryLine) => void;
   onColor: (color: string) => void;
-  onObjectName: (names: NameDisplay) => void;
-  onBodyName: (names: NameDisplay) => void;
+  onLabel: (kind: LabelKind) => void;
+  onOrbit: (id: OrbitLineId) => void;
   onRenderStyle: (style: RenderStyle) => void;
-  onClouds: (clouds: Clouds) => void;
-  onStars: (stars: Stars) => void;
+  onClouds: () => void;
+  onStars: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [arrived, setArrived] = useState(false);
-  const [text, setText] = useState("#fff");
+  const [text, setText] = useState(color);
   useBoxMotion(open, rootRef);
   const boxClass = ["visualization", "material", open ? "" : "is-collapsed", arrived ? "" : "tool-enter"].filter(Boolean).join(" ");
 
@@ -114,117 +122,103 @@ export function Visualization({
               ))}
             </div>
             {renderStyle === "realistic" && (
-              <>
-              <div className="viz-field">
-                <span id="viz-clouds">Cloud</span>
-                <div className="viz-choices" role="group" aria-labelledby="viz-clouds">
-                  {CLOUDS.map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className="round-control pressable"
-                      aria-pressed={clouds === item.id}
-                      onClick={() => onClouds(item.id)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="viz-choices" role="group" aria-label="Realistic options">
+                <button
+                  type="button"
+                  className="round-control pressable"
+                  aria-pressed={clouds}
+                  onClick={onClouds}
+                >
+                  Earth Cloud
+                </button>
+                <button
+                  type="button"
+                  className="round-control pressable"
+                  aria-pressed={stars}
+                  onClick={onStars}
+                >
+                  Background Stars
+                </button>
               </div>
-              <div className="viz-field">
-                <span id="viz-stars">Stars</span>
-                <div className="viz-choices" role="group" aria-labelledby="viz-stars">
-                  {STARS.map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className="round-control pressable"
-                      aria-pressed={stars === item.id}
-                      onClick={() => onStars(item.id)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              </>
             )}
           </section>
           <section className="viz-group">
-            <h3>Trajectory</h3>
+            {showTrajectory && (
+              <>
+                <h3>Trajectory</h3>
+                <div className="viz-field">
+                  <span id="viz-line">Object</span>
+                  <div className="viz-choices" role="group" aria-labelledby="viz-line">
+                    {LINES.map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className="round-control pressable"
+                        aria-pressed={line === item.id}
+                        onClick={() => onLine(item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="viz-field">
+                  <span>Color</span>
+                  <span className="viz-color">
+                    <span className="viz-swatch" style={{ background: color }} aria-hidden="true" />
+                    <input
+                      className="viz-hex nums"
+                      aria-label="Trajectory color"
+                      value={text}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      maxLength={7}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setText(next);
+                        const parsed = parseHex(next);
+                        if (parsed) onColor(parsed);
+                      }}
+                      onBlur={(event) => {
+                        setText(parseHex(event.currentTarget.value) ?? color);
+                      }}
+                    />
+                  </span>
+                </div>
+              </>
+            )}
             <div className="viz-field">
-              <span id="viz-line">Line</span>
-              <div className="viz-choices" role="group" aria-labelledby="viz-line">
-                {LINES.map((item) => (
+              <span id="viz-orbits">Orbit Lines</span>
+              <div className="viz-choices" role="group" aria-labelledby="viz-orbits">
+                {ORBIT_PILLS.map((item) => (
                   <button
                     type="button"
                     key={item.id}
                     className="round-control pressable"
-                    aria-pressed={line === item.id}
-                    onClick={() => onLine(item.id)}
+                    aria-pressed={orbits[item.id]}
+                    onClick={() => onOrbit(item.id)}
                   >
                     {item.label}
                   </button>
                 ))}
               </div>
             </div>
-            <label className="viz-field">
-              <span>Color</span>
-              <span className="viz-color">
-                <span className="viz-swatch" style={{ background: color }} aria-hidden="true" />
-                <input
-                  className="viz-hex nums"
-                  value={text}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  maxLength={7}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setText(next);
-                    const parsed = parseHex(next);
-                    if (parsed) onColor(parsed);
-                  }}
-                  onBlur={(event) => {
-                    if (!parseHex(event.currentTarget.value)) setText(color === "#ffffff" ? "#fff" : color);
-                  }}
-                />
-              </span>
-            </label>
           </section>
           <section className="viz-group">
             <h3>Label</h3>
-            <div className="viz-field">
-              <span id="viz-object-name">Object Name</span>
-              <div className="viz-choices" role="group" aria-labelledby="viz-object-name">
-                {NAMES.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className="round-control pressable"
-                    aria-pressed={objectName === item.id}
-                    onClick={() => onObjectName(item.id)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="viz-field">
-              <span id="viz-body-name">Body Name</span>
-              <div className="viz-choices" role="group" aria-labelledby="viz-body-name">
-                {NAMES.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className="round-control pressable"
-                    aria-pressed={bodyName === item.id}
-                    onClick={() => onBodyName(item.id)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+            <div className="viz-choices" role="group" aria-label="Label">
+              {LABELS.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className="round-control pressable"
+                  aria-pressed={labels[item.id]}
+                  onClick={() => onLabel(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </section>
         </div>

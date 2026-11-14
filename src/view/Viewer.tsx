@@ -27,9 +27,13 @@ import { EphemerisPanel } from "./EphemerisPanel";
 import { LeaveMenu } from "./LeaveMenu";
 import type { TrajectoryLine } from "./OrbitView";
 import { Visualization } from "./Visualization";
-import type { Clouds, NameDisplay, RenderStyle, Stars } from "./Visualization";
+import { DEFAULT_LABELS } from "./Visualization";
+import { DEFAULT_ORBITS, SOLAR_ORBITS } from "./orbitTrack";
+import type { OrbitLineId, OrbitToggles } from "./orbitTrack";
+import type { LabelKind, LabelToggles, RenderStyle } from "./Visualization";
 import type { CameraMode } from "./camera";
 import { trajectoryRadius } from "./sceneFit";
+import { SOLAR_FILE, SOLAR_OVERVIEW_KM, solarSeconds } from "./solar";
 import type { ViewGate } from "./useViewGate";
 import { formatEpoch, readableUtc } from "./format";
 
@@ -52,6 +56,7 @@ export function Viewer({
   onChrome: (style: CSSProperties) => void;
 }) {
   const file = session.file;
+  const solarMode = session.solar && !file;
   const shownArcs = useMemo(
     () => (file ? arcsForCenter(file, session.arcs, session.segment) : []),
     [file, session.arcs, session.segment],
@@ -66,11 +71,11 @@ export function Viewer({
   const [vizOpen, setVizOpen] = useState(false);
   const [trajectoryLine, setTrajectoryLine] = useState<TrajectoryLine>("all");
   const [trajectoryColor, setTrajectoryColor] = useState("#ffffff");
-  const [objectName, setObjectName] = useState<NameDisplay>("shown");
-  const [bodyName, setBodyName] = useState<NameDisplay>("shown");
+  const [orbits, setOrbits] = useState<OrbitToggles>(solarMode ? SOLAR_ORBITS : DEFAULT_ORBITS);
+  const [labels, setLabels] = useState<LabelToggles>(DEFAULT_LABELS);
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("minimal");
-  const [clouds, setClouds] = useState<Clouds>("on");
-  const [stars, setStars] = useState<Stars>("on");
+  const [clouds, setClouds] = useState(true);
+  const [stars, setStars] = useState(true);
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
@@ -104,6 +109,10 @@ export function Viewer({
   }, [session.speed]);
 
   useEffect(() => {
+    setOrbits(solarMode ? SOLAR_ORBITS : DEFAULT_ORBITS);
+  }, [solarMode]);
+
+  useEffect(() => {
     setTrim(null);
     setProgress(null);
     cancelRef.current = true;
@@ -117,21 +126,26 @@ export function Viewer({
   }, []);
 
   useEffect(() => {
+    if (solarMode) {
+      onChrome({});
+      return () => onChrome({});
+    }
     const style = {
       "--sheet": panelOpen ? (narrow ? "58%" : "70%") : "120px",
       ...(panelHeight > 0 ? { "--panel-h": `${panelHeight}px` } : {}),
     } as CSSProperties;
     onChrome(style);
     return () => onChrome({});
-  }, [narrow, onChrome, panelHeight, panelOpen]);
+  }, [narrow, onChrome, panelHeight, panelOpen, solarMode]);
 
-  if (!file) return null;
+  if (!file && !solarMode) return null;
 
-  const utc = formatEpoch(file, session.t);
-  const state = displayedState(file, session.t, session.segment);
-  const liveAt = liveSeconds(file, session.now);
+  const clockFile = solarMode ? SOLAR_FILE : file;
+  const utc = clockFile ? formatEpoch(clockFile, session.t) : null;
+  const state = file ? displayedState(file, session.t, session.segment) : null;
+  const liveAt = file ? liveSeconds(file, session.now) : solarSeconds(session.now);
   const showingLive = liveAt != null && Math.abs(session.t - liveAt) <= LIVE_WINDOW;
-  const covering = file.segments.filter((item) => covers(item, session.t));
+  const covering = file ? file.segments.filter((item) => covers(item, session.t)) : [];
   const readableTime = utc ? (readableUtc(utc.text) ?? utc.text) : "—";
   const isoTime = utc?.text ?? null;
   const timeNote = utc?.dubious ? "· leap table expired" : null;
@@ -227,23 +241,23 @@ export function Viewer({
         {session.webgl ? (
           <Suspense fallback={null}>
             <OrbitView
-              arcs={session.arcs}
+              arcs={solarMode ? [] : session.arcs}
               selected={session.segment}
               clock={session.clockRef}
-              fit={fit}
-              centerName={center?.name ?? null}
-              centerLabel={shown?.centerName ?? ""}
-              objectLabel={shown?.objectName ?? ""}
+              fit={solarMode ? SOLAR_OVERVIEW_KM : fit}
+              centerName={solarMode ? "SUN" : center?.name ?? null}
+              centerLabel={solarMode ? "Sun" : shown?.centerName ?? ""}
+              objectLabel={solarMode ? "" : shown?.objectName ?? ""}
               trajectoryLine={trajectoryLine}
               trajectoryColor={trajectoryColor}
-              showBodyName={bodyName === "shown"}
-              showObjectName={objectName === "shown"}
+              orbits={orbits}
+              labels={labels}
               realistic={renderStyle === "realistic"}
-              clouds={clouds === "on"}
-              stars={stars === "on"}
+              clouds={clouds}
+              stars={stars}
               centerLabelEl={centerLabelEl}
               objectLabelEl={objectLabelEl}
-              bodyRadiusKm={bodyRadiusKm}
+              bodyRadiusKm={solarMode ? orbitCenter("SUN")?.radiusKm ?? null : bodyRadiusKm}
               resetToken={session.resetToken}
               cameraMode={cameraMode}
               onCameraMode={setCameraMode}
@@ -257,16 +271,16 @@ export function Viewer({
           <p className="banner">WebGL is unavailable. Metadata still runs.</p>
         )}
         <span ref={centerLabelEl} className="scene-label">
-          {shown?.centerName ?? ""}
+          {solarMode ? "Sun" : shown?.centerName ?? ""}
         </span>
         <span ref={objectLabelEl} className="scene-label">
-          {shown?.objectName ?? ""}
+          {solarMode ? "" : shown?.objectName ?? ""}
         </span>
         {neighborLabelEls.map((slot, index) => (
           <span key={index} ref={slot} className="scene-label" />
         ))}
       </div>
-      {viewing && !state.ok && <p className="banner">{state.message}</p>}
+      {viewing && state && !state.ok && <p className="banner">{state.message}</p>}
       {!viewing && (
         <div className="opening" role="status" aria-live="polite">
           <p>Opening</p>
@@ -274,7 +288,7 @@ export function Viewer({
         </div>
       )}
       {viewing && <LeaveMenu onConfirm={session.closeFile} />}
-      {viewing && (
+      {viewing && file && (
         <EphemerisPanel
           file={file}
           fileName={session.fileName}
@@ -289,7 +303,7 @@ export function Viewer({
       )}
       {viewing && (
         <Clock
-          file={file}
+          file={clockFile ?? SOLAR_FILE}
           open={clockOpen}
           span={session.span}
           t={session.t}
@@ -338,19 +352,20 @@ export function Viewer({
           open={vizOpen}
           line={trajectoryLine}
           color={trajectoryColor}
-          objectName={objectName}
-          bodyName={bodyName}
+          labels={labels}
+          orbits={orbits}
+          showTrajectory={!solarMode}
           renderStyle={renderStyle}
           clouds={clouds}
           stars={stars}
           onToggle={() => setVizOpen((value) => !value)}
           onLine={setTrajectoryLine}
           onColor={setTrajectoryColor}
-          onObjectName={setObjectName}
-          onBodyName={setBodyName}
+          onLabel={(kind: LabelKind) => setLabels((current) => ({ ...current, [kind]: !current[kind] }))}
+          onOrbit={(id: OrbitLineId) => setOrbits((current) => ({ ...current, [id]: !current[id] }))}
           onRenderStyle={setRenderStyle}
-          onClouds={setClouds}
-          onStars={setStars}
+          onClouds={() => setClouds((value) => !value)}
+          onStars={() => setStars((value) => !value)}
         />
       )}
     </>

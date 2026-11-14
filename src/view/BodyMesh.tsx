@@ -1,7 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { BodyRecord } from "../core/ephemeris/bodies";
 import { EarthBody, JupiterBody, LitBody, MoonBody, SunBody } from "./Globe";
+import { projectedDiameterPx } from "./pixel";
 import type { SceneClock } from "./types";
 
 const MARK = new Float32Array([0, 0, 0]);
@@ -21,6 +24,82 @@ function circleTexture(): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
   return texture;
+}
+
+const WORLD = new THREE.Vector3();
+const FORWARD = new THREE.Vector3();
+const TO_CAMERA = new THREE.Vector3();
+
+const DOT_MATERIAL = new THREE.PointsMaterial({
+  color: "#ffffff",
+  size: 1,
+  sizeAttenuation: false,
+  toneMapped: false,
+  transparent: false,
+  depthTest: true,
+  depthWrite: true,
+});
+
+/**
+ * The sphere stays while it covers a pixel. Below that, a body in frame
+ * is one white pixel. The Sun mesh stays in the scene either way so its flare can find it.
+ */
+function MinimumPixel({
+  radiusKm,
+  keepBody,
+  children,
+}: {
+  radiusKm: number;
+  keepBody: boolean;
+  children: ReactNode;
+}) {
+  const body = useRef<THREE.Group>(null);
+  const dot = useRef<THREE.Points>(null);
+  const geometry = useMemo(() => {
+    const point = new THREE.BufferGeometry();
+    point.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    return point;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useFrame(({ camera, size, gl }) => {
+    const bodyNode = body.current;
+    const dotNode = dot.current;
+    if (!bodyNode || !dotNode) return;
+    const ratio = Math.max(gl.getPixelRatio(), 1);
+    if (DOT_MATERIAL.size !== ratio) DOT_MATERIAL.size = ratio;
+    bodyNode.getWorldPosition(WORLD);
+    const distance = camera.position.distanceTo(WORLD);
+    const fov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 42;
+    const tiny = projectedDiameterPx(fov, distance, radiusKm, size.height) < 1;
+    bodyNode.visible = keepBody || !tiny;
+    if (!tiny) {
+      dotNode.visible = false;
+      dotNode.position.set(0, 0, 0);
+      return;
+    }
+    const ahead = TO_CAMERA.copy(WORLD).sub(camera.position).dot(camera.getWorldDirection(FORWARD)) > 0;
+    const ndc = WORLD.clone().project(camera);
+    const onScreen = ahead && ndc.z >= -1 && ndc.z <= 1 && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1;
+    dotNode.visible = onScreen;
+    if (!onScreen || !keepBody) {
+      dotNode.position.set(0, 0, 0);
+      return;
+    }
+    bodyNode.worldToLocal(TO_CAMERA.copy(camera.position));
+    const reach = TO_CAMERA.length();
+    if (!(reach > 1)) {
+      dotNode.position.set(0, 0, 0);
+      return;
+    }
+    const place = Math.min(radiusKm + 1, reach * 0.5);
+    dotNode.position.copy(TO_CAMERA.multiplyScalar(place / reach));
+  });
+  return (
+    <>
+      <group ref={body}>{children}</group>
+      <points ref={dot} frustumCulled={false} visible={false} geometry={geometry} material={DOT_MATERIAL} />
+    </>
+  );
 }
 
 function BodySphere({ radiusKm }: { radiusKm: number }) {
@@ -66,21 +145,29 @@ export function BodyMesh({
   realistic,
   clouds,
   clock,
+  mark = true,
 }: {
   record: BodyRecord | null;
   radiusKm: number | null;
   realistic: boolean;
   clouds: boolean;
   clock: { current: SceneClock };
+  /** Point bodies (a barycenter, a Lagrange point) draw this mark with their name. */
+  mark?: boolean;
 }) {
   const radius = record?.radiusKm ?? radiusKm;
-  if (record?.appearance === "sun" && radius != null && radius > 0) {
-    return <SunBody radiusKm={radius} />;
-  }
-  if (!(radius != null && radius > 0)) return <OriginMark />;
-  if (!realistic) return <BodySphere radiusKm={radius} />;
-  if (record?.appearance === "earth") return <EarthBody radiusKm={radius} clock={clock} clouds={clouds} />;
-  if (record?.appearance === "moon") return <MoonBody radiusKm={radius} clock={clock} />;
-  if (record?.appearance === "jupiter") return <JupiterBody radiusKm={radius} clock={clock} />;
-  return <LitBody radiusKm={radius} clock={clock} bodyId={record?.id} />;
+  if (!(radius != null && radius > 0)) return mark ? <OriginMark /> : null;
+  const sun = record?.appearance === "sun";
+  let body: ReactNode;
+  if (sun) body = <SunBody radiusKm={radius} />;
+  else if (!realistic) body = <BodySphere radiusKm={radius} />;
+  else if (record?.appearance === "earth") body = <EarthBody radiusKm={radius} clock={clock} clouds={clouds} />;
+  else if (record?.appearance === "moon") body = <MoonBody radiusKm={radius} clock={clock} />;
+  else if (record?.appearance === "jupiter") body = <JupiterBody radiusKm={radius} clock={clock} />;
+  else body = <LitBody radiusKm={radius} clock={clock} bodyId={record?.id} />;
+  return (
+    <MinimumPixel radiusKm={radius} keepBody={sun}>
+      {body}
+    </MinimumPixel>
+  );
 }

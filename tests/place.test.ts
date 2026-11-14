@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { planetFromBarycenter } from "../src/core/ephemeris/barycenter";
+import { moonFromBarycenter, planetFromBarycenter } from "../src/core/ephemeris/barycenter";
 import { orbitCenter } from "../src/core/centers";
 import { bodyByName, neighborsOf } from "../src/core/ephemeris/bodies";
 import { loadOrder } from "../src/core/ephemeris/resolve";
@@ -64,6 +64,22 @@ describe("place", () => {
     const reach = Math.hypot(placed.positionM[0], placed.positionM[1], placed.positionM[2]) / 1000;
     expect(reach).toBeGreaterThan(1);
     expect(reach).toBeLessThan(250);
+  });
+
+  it("places Io on its circle about the Jupiter barycenter", () => {
+    const placed = place(501, 5, [], 0);
+    const moon = moonFromBarycenter(501, 0);
+    expect(placed.ok).toBe(true);
+    expect(moon).not.toBeNull();
+    if (!placed.ok || !moon) return;
+    expect(placed.positionM[0]).toBeCloseTo(moon.positionKm[0] * 1000, 6);
+    const reach = Math.hypot(placed.positionM[0], placed.positionM[1], placed.positionM[2]) / 1000;
+    expect(reach).toBeCloseTo(421800, 0);
+    const fromPlanet = place(501, 599, [], 0);
+    expect(fromPlanet.ok).toBe(true);
+    if (!fromPlanet.ok) return;
+    const apart = Math.hypot(fromPlanet.positionM[0], fromPlanet.positionM[1], fromPlanet.positionM[2]) / 1000;
+    expect(apart).toBeGreaterThan(400000);
   });
 
   it("places the Sun from the Jupiter barycenter and records a missing chain", () => {

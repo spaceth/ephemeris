@@ -11,7 +11,7 @@
 
 import { orbitCenter } from "../centers";
 import type { Vec3 } from "../types";
-import { planetFromBarycenter } from "./barycenter";
+import { moonFromBarycenter, planetFromBarycenter } from "./barycenter";
 import { bodyById, naifForCenter, neighborsOf, type BodyRecord } from "./bodies";
 import { stateRelative, type SpkKernel } from "./resolve";
 import { ephemerisFailure, type EphemerisFailure, type StateQuality } from "./state";
@@ -49,11 +49,25 @@ function add(a: Vec3, b: Vec3, sign: number): Vec3 {
   return [a[0] + sign * b[0], a[1] + sign * b[1], a[2] + sign * b[2]];
 }
 
+function circleMotion(body: BodyRecord, secondsPastJ2000: number): { positionM: Vec3; velocityMps: Vec3 } {
+  const offset = body.placement === "barycenter-offset"
+    ? planetFromBarycenter(body.id, secondsPastJ2000)
+    : body.placement === "satellite"
+      ? moonFromBarycenter(body.id, secondsPastJ2000)
+      : null;
+  if (!offset) return { positionM: [0, 0, 0], velocityMps: [0, 0, 0] };
+  return {
+    positionM: [offset.positionKm[0] * 1000, offset.positionKm[1] * 1000, offset.positionKm[2] * 1000],
+    velocityMps: [offset.velocityKmS[0] * 1000, offset.velocityKmS[1] * 1000, offset.velocityKmS[2] * 1000],
+  };
+}
+
 function circleOffsetM(body: BodyRecord, secondsPastJ2000: number): Vec3 {
-  if (body.placement !== "barycenter-offset") return [0, 0, 0];
-  const offset = planetFromBarycenter(body.id, secondsPastJ2000);
-  if (!offset) return [0, 0, 0];
-  return [offset.positionKm[0] * 1000, offset.positionKm[1] * 1000, offset.positionKm[2] * 1000];
+  return circleMotion(body, secondsPastJ2000).positionM;
+}
+
+function onCircle(body: BodyRecord): boolean {
+  return body.placement === "barycenter-offset" || body.placement === "satellite";
 }
 
 /**
@@ -77,7 +91,7 @@ export function place(
   }
   const bodyOffset = circleOffsetM(body, secondsPastJ2000);
   const viewOffset = circleOffsetM(view, secondsPastJ2000);
-  const circle = body.placement === "barycenter-offset" || view.placement === "barycenter-offset";
+  const circle = onCircle(body) || onCircle(view);
   if (body.chain === view.chain) {
     const quality = circle ? [...BASE_QUALITY, CIRCLE] : BASE_QUALITY;
     return { ok: true, positionM: add(bodyOffset, viewOffset, -1), quality };
@@ -89,6 +103,45 @@ export function place(
   if (!state.ok) return remember(state);
   const quality = circle ? [...state.state.quality, CIRCLE] : state.state.quality;
   return { ok: true, positionM: add(add(state.state.positionM, bodyOffset, 1), viewOffset, -1), quality };
+}
+
+/**
+ * Position and velocity of `place`, EME2000 meters and meters per second.
+ * The velocity follows the same chain, including the circle-rule rate.
+ */
+export function placeMotion(
+  bodyId: number,
+  viewingCenterId: number | null,
+  kernels: readonly SpkKernel[],
+  secondsPastJ2000: number,
+): { ok: true; positionM: Vec3; velocityMps: Vec3 } | EphemerisFailure {
+  if (viewingCenterId == null) {
+    return remember(ephemerisFailure("unresolved-center", "The viewing center has no NAIF id."));
+  }
+  const body = bodyById(bodyId);
+  const view = bodyById(viewingCenterId);
+  if (!body || !view) {
+    return remember(ephemerisFailure("unresolved-center", `No catalog chain from ${bodyId} to ${viewingCenterId}.`));
+  }
+  const bodyMove = circleMotion(body, secondsPastJ2000);
+  const viewMove = circleMotion(view, secondsPastJ2000);
+  if (body.chain === view.chain) {
+    return {
+      ok: true,
+      positionM: add(bodyMove.positionM, viewMove.positionM, -1),
+      velocityMps: add(bodyMove.velocityMps, viewMove.velocityMps, -1),
+    };
+  }
+  if (kernels.length === 0) {
+    return remember(ephemerisFailure("missing-dependency", `No planetary kernel can place ${bodyId} from ${viewingCenterId}.`));
+  }
+  const state = stateRelative(kernels, body.chain, view.chain, secondsPastJ2000, "EME2000", BASE_QUALITY);
+  if (!state.ok) return remember(state);
+  return {
+    ok: true,
+    positionM: add(add(state.state.positionM, bodyMove.positionM, 1), viewMove.positionM, -1),
+    velocityMps: add(add(state.state.velocityMps, bodyMove.velocityMps, 1), viewMove.velocityMps, -1),
+  };
 }
 
 /**

@@ -4,6 +4,7 @@ import { coverageSpan, liveSeconds, segmentAtTime } from "./core";
 import { bindCraft } from "./core/ephemeris/craft";
 import type { OemFile } from "./core";
 import type { ArcBuffer, WorkerResponse } from "./session";
+import { SOLAR_FILE, SOLAR_SPAN, solarSeconds } from "./view/solar";
 import type { SceneClock } from "./view/types";
 
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -30,6 +31,7 @@ export function useEphemeris() {
   const workerRef = useRef<Worker | null>(null);
   const parseId = useRef(0);
   const fileRef = useRef<OemFile | null>(null);
+  const solarRef = useRef(false);
   const playingRef = useRef(false);
   const speedRef = useRef(1);
   const clockRef = useRef<SceneClock>({ file: null, t: 0, segment: 0 });
@@ -37,6 +39,7 @@ export function useEphemeris() {
   const spkBuffers = useRef(new Map<number, ArrayBuffer>());
 
   const [file, setFile] = useState<OemFile | null>(null);
+  const [solar, setSolar] = useState(false);
   const [arcs, setArcs] = useState<ArcBuffer[]>([]);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,13 +53,20 @@ export function useEphemeris() {
   const [dragOver, setDragOver] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
-  const span = file ? coverageSpan(file) : null;
+  const span = file ? coverageSpan(file) : solar ? SOLAR_SPAN : null;
 
   fileRef.current = file;
+  solarRef.current = solar;
   speedRef.current = speed;
-  clockRef.current.file = file;
+  clockRef.current.file = file ?? (solar ? SOLAR_FILE : null);
   clockRef.current.segment = segment;
   if (!playingRef.current) clockRef.current.t = t;
+
+  const coverageNow = useCallback(() => {
+    if (fileRef.current) return coverageSpan(fileRef.current);
+    if (solarRef.current) return SOLAR_SPAN;
+    return null;
+  }, []);
 
   const syncSegment = useCallback((at: number) => {
     const current = fileRef.current;
@@ -68,41 +78,43 @@ export function useEphemeris() {
   }, []);
 
   const seek = useCallback((next: number) => {
-    const coverage = fileRef.current ? coverageSpan(fileRef.current) : null;
+    const coverage = coverageNow();
     const value = coverage ? Math.min(coverage.stop, Math.max(coverage.start, next)) : next;
     clockRef.current.t = value;
     syncSegment(value);
     setT(value);
-  }, [syncSegment]);
+  }, [coverageNow, syncSegment]);
 
   const nudge = useCallback((seconds: number) => {
     seek(clockRef.current.t + seconds);
   }, [seek]);
 
   const togglePlay = useCallback(() => {
-    if (!fileRef.current || !coverageSpan(fileRef.current)) return;
+    const coverage = coverageNow();
+    if (!coverage) return;
     if (playingRef.current) {
       playingRef.current = false;
       setT(clockRef.current.t);
       setPlaying(false);
       return;
     }
-    const coverage = coverageSpan(fileRef.current);
-    if (coverage && clockRef.current.t >= coverage.stop) {
+    if (clockRef.current.t >= coverage.stop) {
       clockRef.current.t = coverage.start;
       setT(coverage.start);
     }
     playingRef.current = true;
     setPlaying(true);
-  }, []);
+  }, [coverageNow]);
 
   const closeFile = useCallback(() => {
     parseId.current += 1;
     playingRef.current = false;
+    solarRef.current = false;
     clockRef.current.file = null;
     clockRef.current.t = 0;
     clockRef.current.segment = 0;
     setPlaying(false);
+    setSolar(false);
     setFile(null);
     setArcs([]);
     setFileName("");
@@ -112,8 +124,31 @@ export function useEphemeris() {
     setSegment(0);
   }, []);
 
+  const openSolar = useCallback(() => {
+    parseId.current += 1;
+    playingRef.current = false;
+    solarRef.current = true;
+    const at = solarSeconds(new Date()) ?? SOLAR_SPAN.start;
+    clockRef.current.file = SOLAR_FILE;
+    clockRef.current.t = at;
+    clockRef.current.segment = 0;
+    setPlaying(false);
+    setFile(null);
+    setArcs([]);
+    setFileName("");
+    setError(null);
+    setLoading(false);
+    setT(at);
+    setSegment(0);
+    setSolar(true);
+  }, []);
+
   const goLive = useCallback(() => {
-    const at = fileRef.current ? liveSeconds(fileRef.current, new Date()) : null;
+    const at = fileRef.current
+      ? liveSeconds(fileRef.current, new Date())
+      : solarRef.current
+        ? solarSeconds(new Date())
+        : null;
     if (at == null) return;
     speedRef.current = 1;
     setSpeed(1);
@@ -217,11 +252,11 @@ export function useEphemeris() {
   }, [ingest]);
 
   useEffect(() => {
-    if (!file) return;
+    if (!file && !solar) return;
     setNow(new Date());
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
-  }, [file]);
+  }, [file, solar]);
 
   useEffect(() => {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
@@ -238,10 +273,12 @@ export function useEphemeris() {
         const start = coverageSpan(message.file)?.start ?? 0;
         const nextSegment = segmentAtTime(message.file, start, 0);
         playingRef.current = false;
+        solarRef.current = false;
         clockRef.current.t = start;
         clockRef.current.segment = nextSegment;
         setLoading(false);
         setError(null);
+        setSolar(false);
         setFile(message.file);
         setArcs(message.arcs);
         setFileName(message.name);
@@ -261,15 +298,14 @@ export function useEphemeris() {
   }, []);
 
   useEffect(() => {
-    if (!file) return;
+    if (!file && !solar) return;
     let frame = 0;
     let last = performance.now();
     let painted = 0;
     const tick = (stamp: number) => {
       const dt = Math.min(0.1, (stamp - last) / 1000);
       last = stamp;
-      const current = fileRef.current;
-      const coverage = current ? coverageSpan(current) : null;
+      const coverage = coverageNow();
       if (playingRef.current && coverage && coverage.stop > coverage.start) {
         let next = clockRef.current.t + dt * speedRef.current;
         if (next >= coverage.stop) {
@@ -288,11 +324,11 @@ export function useEphemeris() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [file, syncSegment]);
+  }, [coverageNow, file, solar, syncSegment]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!fileRef.current) return;
+      if (!fileRef.current && !solarRef.current) return;
       const target = event.target;
       if (target instanceof HTMLElement) {
         const tag = target.tagName;
@@ -308,20 +344,21 @@ export function useEphemeris() {
         nudge(step);
       } else if (event.key === "Home") {
         event.preventDefault();
-        const coverage = fileRef.current ? coverageSpan(fileRef.current) : null;
+        const coverage = coverageNow();
         if (coverage) seek(coverage.start);
       } else if (event.key === "End") {
         event.preventDefault();
-        const coverage = fileRef.current ? coverageSpan(fileRef.current) : null;
+        const coverage = coverageNow();
         if (coverage) seek(coverage.stop);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [nudge, seek, togglePlay]);
+  }, [coverageNow, nudge, seek, togglePlay]);
 
   return {
     file,
+    solar,
     arcs,
     fileName,
     error,
@@ -340,6 +377,7 @@ export function useEphemeris() {
     clockRef,
     onPick,
     loadExample,
+    openSolar,
     closeFile,
     seek,
     togglePlay,

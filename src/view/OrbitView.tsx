@@ -9,7 +9,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { ArcBuffer } from "../session";
 import { orbitCenter } from "../core";
 import { toScene } from "../core/scene";
-import { bodyByName } from "../core/ephemeris/bodies";
+import { bodyByName, centerLabelKind } from "../core/ephemeris/bodies";
 import { centerNaif, placeCenter } from "../core/ephemeris/place";
 import { tdbFromTaiClock } from "../core/ephemeris/scales";
 import { lightingKernel } from "../core/ephemeris/sunLight";
@@ -19,10 +19,13 @@ import { CaptureBridge } from "./CaptureBridge";
 import type { CaptureHandle } from "./CaptureBridge";
 import type { SphereObstacle } from "./CameraDirector";
 import { Neighbors } from "./Neighbors";
+import { OrbitLines } from "./OrbitTracks";
+import type { OrbitToggles } from "./orbitTrack";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
 import type { FlareTune } from "./flareTune";
 import type { CameraMode } from "./camera";
+import type { LabelToggles } from "./Visualization";
 import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
 import { queueSceneLabel, settleSceneLabels } from "./labelLayout";
@@ -31,6 +34,8 @@ import type { SceneClock } from "./types";
 const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
 /** Framebuffer pixels across the strip. The falloff below keeps the bright core near one pixel. */
 const ARC_WIDTH_PX = 2;
+/** Unselected segments stay at this share of the chosen opacity. */
+const QUIET_SEGMENT = 0.32 / 0.95;
 
 export type TrajectoryLine = "all" | "trail" | "short" | "hidden";
 
@@ -52,12 +57,12 @@ type OrbitProps = {
   objectLabel: string;
   /** Full arc, the path already flown, a short fading trail, or nothing. */
   trajectoryLine: TrajectoryLine;
-  /** CSS hex color for the trajectory. */
+  /** CSS hex color for the object path and the object point. */
   trajectoryColor: string;
-  /** Screen name for the center body. */
-  showBodyName: boolean;
-  /** Screen name for the spacecraft. */
-  showObjectName: boolean;
+  /** White orbit rings. Each pill draws that body's path. */
+  orbits: OrbitToggles;
+  /** Which screen names are on. */
+  labels: LabelToggles;
   /** Sun-lit body. Earth uses day and night maps, oriented in EME2000. The Sun is a white disk with a lens flare. */
   realistic: boolean;
   /** Earth day map with clouds. Ignored unless realistic Earth is showing. */
@@ -499,14 +504,14 @@ function CraftProbe({ clock, pose }: { clock: { current: SceneClock }; pose: Ref
   return null;
 }
 
-function Craft({ pose }: { pose: RefObject<CraftPose | null> }) {
+function Craft({ pose, show, color }: { pose: RefObject<CraftPose | null>; show: boolean; color: string }) {
   const points = useRef<THREE.Points>(null);
   const map = useMemo(() => circleTexture(), []);
   useEffect(() => () => map.dispose(), [map]);
   useFrame(() => {
     const node = points.current;
     const sample = pose.current;
-    if (!node || !sample?.ok) {
+    if (!node || !show || !sample?.ok) {
       if (node) node.visible = false;
       return;
     }
@@ -520,7 +525,7 @@ function Craft({ pose }: { pose: RefObject<CraftPose | null> }) {
       </bufferGeometry>
       <pointsMaterial
         map={map}
-        color="#f5f5f7"
+        color={color}
         size={10}
         sizeAttenuation={false}
         transparent
@@ -554,6 +559,7 @@ function placeLabel(
   scratch: THREE.Vector3,
   forward: THREE.Vector3,
   pinned: boolean,
+  bodyId: number | null,
 ) {
   if (!el) return;
   if (!show) {
@@ -568,29 +574,32 @@ function placeLabel(
   }
   const pixel = Math.max(pixelRatio, 1);
   const x = Math.round((scratch.x * 0.5 + 0.5) * size.width * pixel) / pixel;
-  const y = Math.round(((-scratch.y * 0.5 + 0.5) * size.height - liftPx) * pixel) / pixel;
-  queueSceneLabel(el, x, y, pinned);
+  const yBody = Math.round(((-scratch.y * 0.5 + 0.5) * size.height) * pixel) / pixel;
+  const y = Math.round((yBody - liftPx) * pixel) / pixel;
+  queueSceneLabel(el, x, y, pinned, bodyId, x, yBody, liftPx);
 }
 
 /** Screen-space names. The center sits just above its limb; a point sits just above the mark. */
 function SceneLabels({
   centerLabel,
   objectLabel,
-  showBodyName,
-  showObjectName,
+  showCenter,
+  showObject,
   radiusKm,
   pose,
   centerEl,
   craftEl,
+  centerBodyId,
 }: {
   centerLabel: string;
   objectLabel: string;
-  showBodyName: boolean;
-  showObjectName: boolean;
+  showCenter: boolean;
+  showObject: boolean;
   radiusKm: number;
   pose: RefObject<CraftPose | null>;
   centerEl: RefObject<HTMLSpanElement | null>;
   craftEl: RefObject<HTMLSpanElement | null>;
+  centerBodyId: number | null;
 }) {
   const scratch = useMemo(() => new THREE.Vector3(), []);
   const forward = useMemo(() => new THREE.Vector3(), []);
@@ -605,7 +614,7 @@ function SceneLabels({
     placeLabel(
       centerEl.current,
       LABEL_ORIGIN,
-      showBodyName && Boolean(centerLabel) && !inside,
+      showCenter && Boolean(centerLabel) && !inside,
       camera,
       size,
       pixelRatio,
@@ -613,12 +622,13 @@ function SceneLabels({
       scratch,
       forward,
       true,
+      centerBodyId,
     );
     const sample = pose.current;
     placeLabel(
       craftEl.current,
       sample?.pos ?? LABEL_ORIGIN,
-      showObjectName && Boolean(sample?.ok && objectLabel),
+      showObject && Boolean(sample?.ok && objectLabel),
       camera,
       size,
       pixelRatio,
@@ -626,6 +636,7 @@ function SceneLabels({
       scratch,
       forward,
       false,
+      null,
     );
   });
   return null;
@@ -694,8 +705,8 @@ export function OrbitView({
   objectLabel,
   trajectoryLine,
   trajectoryColor,
-  showBodyName,
-  showObjectName,
+  orbits,
+  labels,
   realistic,
   clouds,
   stars,
@@ -714,6 +725,11 @@ export function OrbitView({
   const obstacles = useRef<SphereObstacle[]>([]);
   const reach = useRef(0);
   const exporting = useRef(false);
+  const showCenter = (() => {
+    const kind = centerLabelKind(centerName);
+    return Boolean(centerLabel) && (kind == null || labels[kind]);
+  })();
+  const centerIsPoint = !(bodyRadiusKm != null && bodyRadiusKm > 0);
   const centerBody = useMemo(() => {
     const known = centerName ? orbitCenter(centerName) : null;
     return known ? bodyByName(known.name) : null;
@@ -732,13 +748,20 @@ export function OrbitView({
       />
       <color attach="background" args={["#000000"]} />
       {realistic && stars && <StarField />}
-      <BodyMesh record={centerBody} radiusKm={bodyRadiusKm} realistic={realistic} clouds={clouds} clock={clock} />
+      <BodyMesh
+        record={centerBody}
+        radiusKm={bodyRadiusKm}
+        realistic={realistic}
+        clouds={clouds}
+        clock={clock}
+        mark={!centerIsPoint || showCenter}
+      />
       <Neighbors
         clock={clock}
         centerName={centerName}
         realistic={realistic}
         clouds={clouds}
-        showNames={showBodyName}
+        labels={labels}
         obstacles={obstacles}
         reach={reach}
         labelEls={neighborLabelEls}
@@ -749,7 +772,7 @@ export function OrbitView({
           key={arc.segmentIndex}
           arc={arc}
           viewingCenter={centerName}
-          opacity={arc.segmentIndex === selected ? 0.95 : 0.32}
+          opacity={arc.segmentIndex === selected ? 1 : QUIET_SEGMENT}
           color={trajectoryColor}
           mode={trajectoryLine}
           clock={clock}
@@ -757,7 +780,8 @@ export function OrbitView({
         />
       ))}
       <CraftProbe clock={clock} pose={pose} />
-      <Craft pose={pose} />
+      <Craft pose={pose} show={labels.object} color={trajectoryColor} />
+      <OrbitLines orbits={orbits} clock={clock} centerName={centerName} />
       <OrbitControls
         makeDefault
         enabled={!capturing}
@@ -765,7 +789,7 @@ export function OrbitView({
         enableDamping={!capturing}
         dampingFactor={0.08}
         minDistance={cameraMode !== "overview" && cameraMode !== "system" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
-        maxDistance={cameraMode === "system" || centerNaif(centerName) != null ? 1e9 : Math.max(fit, 16) * 30}
+        maxDistance={cameraMode === "system" || centerNaif(centerName) != null ? Math.max(1e9, fit * 4) : Math.max(fit, 16) * 30}
       />
       <CameraRig fit={fit} reach={reach} resetToken={resetToken} mode={cameraMode} />
       <CameraDirector
@@ -779,12 +803,13 @@ export function OrbitView({
       <SceneLabels
         centerLabel={centerLabel}
         objectLabel={objectLabel}
-        showBodyName={showBodyName}
-        showObjectName={showObjectName}
+        showCenter={showCenter}
+        showObject={labels.object}
         radiusKm={bodyRadiusKm ?? 0}
         pose={pose}
         centerEl={centerLabelEl}
         craftEl={objectLabelEl}
+        centerBodyId={centerBody?.id ?? null}
       />
       <LabelSettle />
     </Canvas>

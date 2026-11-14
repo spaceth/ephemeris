@@ -32,6 +32,8 @@ const DAY = 86400;
 const DEG = Math.PI / 180;
 
 type Satellite = {
+  id: number;
+  label: string;
   gmKm3s2: number;
   aKm: number;
   periodDays: number;
@@ -42,6 +44,8 @@ type Satellite = {
 
 type System = {
   barycenterName: string;
+  /** NAIF id of the system barycenter. Moon positions are measured from here. */
+  chain: number;
   planetId: number;
   planetName: string;
   label: string;
@@ -49,66 +53,78 @@ type System = {
   satellites: readonly Satellite[];
 };
 
+export type CatalogMoon = {
+  id: number;
+  label: string;
+  planetId: number;
+  chain: number;
+};
+
 const SYSTEMS: readonly System[] = [
-  { barycenterName: "MERCURY BARYCENTER", planetId: 199, planetName: "MERCURY", label: "Mercury", gmKm3s2: 0, satellites: [] },
-  { barycenterName: "VENUS BARYCENTER", planetId: 299, planetName: "VENUS", label: "Venus", gmKm3s2: 0, satellites: [] },
-  { barycenterName: "MARS BARYCENTER", planetId: 499, planetName: "MARS", label: "Mars", gmKm3s2: 0, satellites: [] },
+  { barycenterName: "MERCURY BARYCENTER", chain: 1, planetId: 199, planetName: "MERCURY", label: "Mercury", gmKm3s2: 0, satellites: [] },
+  { barycenterName: "VENUS BARYCENTER", chain: 2, planetId: 299, planetName: "VENUS", label: "Venus", gmKm3s2: 0, satellites: [] },
+  { barycenterName: "MARS BARYCENTER", chain: 4, planetId: 499, planetName: "MARS", label: "Mars", gmKm3s2: 0, satellites: [] },
   {
     barycenterName: "JUPITER BARYCENTER",
+    chain: 5,
     planetId: 599,
     planetName: "JUPITER",
     label: "Jupiter",
     gmKm3s2: 126686531.9,
     satellites: [
-      { gmKm3s2: 5959.91547, aKm: 421800, periodDays: 1.762732, lambda0Deg: 0 + 49.1 + 330.9, retrograde: false },
-      { gmKm3s2: 3202.7121, aKm: 671100, periodDays: 3.525463, lambda0Deg: 184 + 45 + 345.4, retrograde: false },
-      { gmKm3s2: 9887.83275, aKm: 1070400, periodDays: 7.155588, lambda0Deg: 58.5 + 198.3 + 324.8, retrograde: false },
-      { gmKm3s2: 7179.2834, aKm: 1882700, periodDays: 16.69044, lambda0Deg: 309.1 + 43.8 + 87.4, retrograde: false },
+      { id: 501, label: "Io", gmKm3s2: 5959.91547, aKm: 421800, periodDays: 1.762732, lambda0Deg: 0 + 49.1 + 330.9, retrograde: false },
+      { id: 502, label: "Europa", gmKm3s2: 3202.7121, aKm: 671100, periodDays: 3.525463, lambda0Deg: 184 + 45 + 345.4, retrograde: false },
+      { id: 503, label: "Ganymede", gmKm3s2: 9887.83275, aKm: 1070400, periodDays: 7.155588, lambda0Deg: 58.5 + 198.3 + 324.8, retrograde: false },
+      { id: 504, label: "Callisto", gmKm3s2: 7179.2834, aKm: 1882700, periodDays: 16.69044, lambda0Deg: 309.1 + 43.8 + 87.4, retrograde: false },
     ],
   },
   {
     barycenterName: "SATURN BARYCENTER",
+    chain: 6,
     planetId: 699,
     planetName: "SATURN",
     label: "Saturn",
     gmKm3s2: 37931206.23,
     satellites: [
-      { gmKm3s2: 153.94175, aKm: 527200, periodDays: 4.517503, lambda0Deg: 133.7 + 44.3 + 31.5, retrograde: false },
-      { gmKm3s2: 8978.1371, aKm: 1221900, periodDays: 15.945448, lambda0Deg: 78.6 + 78.3 + 11.7, retrograde: false },
-      { gmKm3s2: 120.51511, aKm: 3561700, periodDays: 79.331002, lambda0Deg: 86.5 + 254.5 + 74.8, retrograde: false },
+      { id: 605, label: "Rhea", gmKm3s2: 153.94175, aKm: 527200, periodDays: 4.517503, lambda0Deg: 133.7 + 44.3 + 31.5, retrograde: false },
+      { id: 606, label: "Titan", gmKm3s2: 8978.1371, aKm: 1221900, periodDays: 15.945448, lambda0Deg: 78.6 + 78.3 + 11.7, retrograde: false },
+      { id: 608, label: "Iapetus", gmKm3s2: 120.51511, aKm: 3561700, periodDays: 79.331002, lambda0Deg: 86.5 + 254.5 + 74.8, retrograde: false },
     ],
   },
   {
     barycenterName: "URANUS BARYCENTER",
+    chain: 7,
     planetId: 799,
     planetName: "URANUS",
     label: "Uranus",
     gmKm3s2: 5793951.3,
     satellites: [
-      { gmKm3s2: 83.5, aKm: 190929, periodDays: 2.520379, lambda0Deg: 0 + 193.5 + 9.6, retrograde: false },
-      { gmKm3s2: 85.1, aKm: 265986, periodDays: 4.144177, lambda0Deg: 174.8 + 253 + 183.4, retrograde: false },
-      { gmKm3s2: 226.9, aKm: 436298, periodDays: 8.705869, lambda0Deg: 29.5 + 68.1 + 184, retrograde: false },
-      { gmKm3s2: 205.3, aKm: 583511, periodDays: 13.463237, lambda0Deg: 76.8 + 143.6 + 132.2, retrograde: false },
+      { id: 701, label: "Ariel", gmKm3s2: 83.5, aKm: 190929, periodDays: 2.520379, lambda0Deg: 0 + 193.5 + 9.6, retrograde: false },
+      { id: 702, label: "Umbriel", gmKm3s2: 85.1, aKm: 265986, periodDays: 4.144177, lambda0Deg: 174.8 + 253 + 183.4, retrograde: false },
+      { id: 703, label: "Titania", gmKm3s2: 226.9, aKm: 436298, periodDays: 8.705869, lambda0Deg: 29.5 + 68.1 + 184, retrograde: false },
+      { id: 704, label: "Oberon", gmKm3s2: 205.3, aKm: 583511, periodDays: 13.463237, lambda0Deg: 76.8 + 143.6 + 132.2, retrograde: false },
     ],
   },
   {
     barycenterName: "NEPTUNE BARYCENTER",
+    chain: 8,
     planetId: 899,
     planetName: "NEPTUNE",
     label: "Neptune",
     gmKm3s2: 6835099.97,
     satellites: [
-      { gmKm3s2: 1428.49546, aKm: 354800, periodDays: 5.8792, lambda0Deg: 177.7 + 0 + 63, retrograde: true },
+      { id: 801, label: "Triton", gmKm3s2: 1428.49546, aKm: 354800, periodDays: 5.8792, lambda0Deg: 177.7 + 0 + 63, retrograde: true },
     ],
   },
   {
     barycenterName: "PLUTO BARYCENTER",
+    chain: 9,
     planetId: 999,
     planetName: "PLUTO",
     label: "Pluto",
     gmKm3s2: 869.3,
     satellites: [
-      { gmKm3s2: 106.1, aKm: 19600, periodDays: 6.387222, lambda0Deg: 0 + 304.1 + 0, retrograde: false },
+      { id: 901, label: "Charon", gmKm3s2: 106.1, aKm: 19600, periodDays: 6.387222, lambda0Deg: 0 + 304.1 + 0, retrograde: false },
     ],
   },
 ];
@@ -117,6 +133,17 @@ type Basis = { x: Vec3; y: Vec3 };
 
 const BY_BARY = new Map(SYSTEMS.map((system) => [system.barycenterName, system]));
 const BY_PLANET = new Map(SYSTEMS.map((system) => [system.planetId, system]));
+const BY_MOON = new Map(SYSTEMS.flatMap((system) => system.satellites.map((satellite) => [satellite.id, { system, satellite }] as const)));
+
+/** Moons retained by the circle rule, in system order. */
+export const CATALOG_MOONS: readonly CatalogMoon[] = SYSTEMS.flatMap((system) =>
+  system.satellites.map((satellite) => ({
+    id: satellite.id,
+    label: satellite.label,
+    planetId: system.planetId,
+    chain: system.chain,
+  })),
+);
 const POLES = parsePckPoles(pckText);
 const BASES = new Map<number, Basis>();
 
@@ -164,22 +191,49 @@ export function planetFromBarycenter(planetId: number, secondsPastJ2000: number)
   const velocity: Vec3 = [0, 0, 0];
   for (const satellite of system.satellites) {
     gm += satellite.gmKm3s2;
-    const motion = (satellite.retrograde ? -1 : 1) * (2 * Math.PI) / (satellite.periodDays * DAY);
-    const angle = satellite.lambda0Deg * DEG + motion * secondsPastJ2000;
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
+    const moved = armOf(satellite, basis, secondsPastJ2000);
     const weight = satellite.gmKm3s2;
     for (let axis = 0; axis < 3; axis += 1) {
-      const arm = satellite.aKm * (cos * basis.x[axis] + sin * basis.y[axis]);
-      const rate = satellite.aKm * motion * (-sin * basis.x[axis] + cos * basis.y[axis]);
-      position[axis] += weight * arm;
-      velocity[axis] += weight * rate;
+      position[axis] += weight * moved.arm[axis];
+      velocity[axis] += weight * moved.rate[axis];
     }
   }
   return {
     positionKm: scale(position, -1 / gm),
     velocityKmS: scale(velocity, -1 / gm),
   };
+}
+
+/** Sidereal period of a circle-rule moon, in days. The Earth's Moon is not in this table. */
+export function moonPeriodDays(moonId: number): number | null {
+  return BY_MOON.get(moonId)?.satellite.periodDays ?? null;
+}
+
+/**
+ * Moon relative to its system barycenter, EME2000 kilometers.
+ * The same circle as `planetFromBarycenter`. Unknown ids return null.
+ */
+export function moonFromBarycenter(moonId: number, secondsPastJ2000: number): PlanetOffset | null {
+  const found = BY_MOON.get(moonId);
+  if (!found) return null;
+  const basis = BASES.get(found.system.planetId);
+  if (!basis) return null;
+  const moved = armOf(found.satellite, basis, secondsPastJ2000);
+  return { positionKm: moved.arm, velocityKmS: moved.rate };
+}
+
+function armOf(satellite: Satellite, basis: Basis, secondsPastJ2000: number): { arm: Vec3; rate: Vec3 } {
+  const motion = (satellite.retrograde ? -1 : 1) * (2 * Math.PI) / (satellite.periodDays * DAY);
+  const angle = satellite.lambda0Deg * DEG + motion * secondsPastJ2000;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const arm: Vec3 = [0, 0, 0];
+  const rate: Vec3 = [0, 0, 0];
+  for (let axis = 0; axis < 3; axis += 1) {
+    arm[axis] = satellite.aKm * (cos * basis.x[axis] + sin * basis.y[axis]);
+    rate[axis] = satellite.aKm * motion * (-sin * basis.x[axis] + cos * basis.y[axis]);
+  }
+  return { arm, rate };
 }
 
 function equatorBasis(raDeg: number, decDeg: number): Basis {

@@ -59,7 +59,7 @@ button:focus-visible,
   z-index: 1;
   display: block;
   visibility: hidden;
-  color: #f5f5f7;
+  color: #ffffff;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.14em;
@@ -890,6 +890,7 @@ html.is-welcome .app {
 }
 
 .welcome {
+  z-index: 7;
   padding: 36px 40px;
   display: flex;
   flex-direction: column;

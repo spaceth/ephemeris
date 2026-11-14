@@ -7,7 +7,10 @@
  * Mercury and Venus do have those segments, so they chain 199 and 299.
  */
 
+import pckText from "../../../kernels/pck00011.tpc?raw";
 import { orbitCenter } from "../centers";
+import { parsePckRadii } from "../pck";
+import { CATALOG_MOONS } from "./barycenter";
 import type { NaifId } from "./state";
 
 export type BodyAttitude = "earth" | "moon" | "none";
@@ -15,7 +18,7 @@ export type BodyAttitude = "earth" | "moon" | "none";
 /** Which mesh reads this record. Minimal style still draws a gray sphere, except the Sun. */
 export type BodyAppearance = "sun" | "earth" | "moon" | "jupiter" | "sphere";
 
-export type BodyPlacement = "snapshot" | "barycenter-offset";
+export type BodyPlacement = "snapshot" | "barycenter-offset" | "satellite";
 
 export type BodyRecord = {
   id: NaifId;
@@ -31,8 +34,11 @@ export type BodyRecord = {
   /**
    * SPK target walked to the solar-system barycenter.
    * A barycenter-offset planet walks its system barycenter, not the planet id.
+   * A satellite walks that same barycenter, then the circle-rule arm.
    */
   chain: NaifId;
+  /** Planet whose label this moon yields to while the two names sit together. */
+  primaryId: number | null;
 };
 
 const EARTH_DAY = "/textures/earth-day.jpg";
@@ -45,6 +51,14 @@ function sized(name: string): number {
   return radiusKm;
 }
 
+const PCK_RADII = parsePckRadii(pckText);
+
+function moonRadiusKm(id: number): number {
+  const radii = PCK_RADII.get(id);
+  if (!radii) throw new Error(`kernels/pck00011.tpc has no BODY${id}_RADII`);
+  return (radii[0] + radii[1]) / 2;
+}
+
 function body(
   id: number,
   name: string,
@@ -55,8 +69,9 @@ function body(
   placement: BodyPlacement,
   chain: number,
   radiusKm: number | null,
+  primaryId: number | null = null,
 ): BodyRecord {
-  return { id, name, label, radiusKm, texture, attitude, appearance, placement, chain };
+  return { id, name, label, radiusKm, texture, attitude, appearance, placement, chain, primaryId };
 }
 
 function barycenter(id: number, name: string): BodyRecord {
@@ -72,8 +87,9 @@ function planet(
   texture: string | null,
   placement: BodyPlacement,
   chain: number,
+  primaryId: number | null = null,
 ): BodyRecord {
-  return body(id, name, label, appearance, attitude, texture, placement, chain, sized(name));
+  return body(id, name, label, appearance, attitude, texture, placement, chain, sized(name), primaryId);
 }
 
 /**
@@ -97,14 +113,22 @@ export const BODIES: readonly BodyRecord[] = [
   planet(199, "MERCURY", "Mercury", "sphere", "none", null, "snapshot", 199),
   planet(299, "VENUS", "Venus", "sphere", "none", null, "snapshot", 299),
   planet(399, "EARTH", "Earth", "earth", "earth", EARTH_DAY, "snapshot", 399),
-  planet(301, "MOON", "Moon", "moon", "moon", MOON_COLOR, "snapshot", 301),
+  planet(301, "MOON", "Moon", "moon", "moon", MOON_COLOR, "snapshot", 301, 399),
   planet(499, "MARS", "Mars", "sphere", "none", null, "barycenter-offset", 4),
   planet(599, "JUPITER", "Jupiter", "jupiter", "none", JUPITER_COLOR, "barycenter-offset", 5),
   planet(699, "SATURN", "Saturn", "sphere", "none", null, "barycenter-offset", 6),
   planet(799, "URANUS", "Uranus", "sphere", "none", null, "barycenter-offset", 7),
   planet(899, "NEPTUNE", "Neptune", "sphere", "none", null, "barycenter-offset", 8),
   planet(999, "PLUTO", "Pluto", "sphere", "none", null, "barycenter-offset", 9),
+  ...CATALOG_MOONS.map((moon) =>
+    body(moon.id, moon.label.toUpperCase(), moon.label, "sphere", "none", null, "satellite", moon.chain, moonRadiusKm(moon.id), moon.planetId),
+  ),
 ];
+
+/** Planet label a moon yields to while the two names sit together. */
+export function labelPrimary(bodyId: number): number | null {
+  return BY_ID.get(bodyId)?.primaryId ?? null;
+}
 
 /** Spans reserved for neighbor names. One per sized body, including the case where the center is a barycenter. */
 export const BODY_LABEL_COUNT = BODIES.filter((item) => item.radiusKm != null).length;
@@ -118,6 +142,29 @@ export function bodyById(id: number): BodyRecord | null {
 
 export function bodyByName(canonicalName: string): BodyRecord | null {
   return BY_NAME.get(canonicalName) ?? null;
+}
+
+/** Screen-name group for a drawn body. */
+export type BodyLabelKind = "sun" | "planet" | "moon" | "barycenter" | "lagrange";
+
+export function bodyLabelKind(id: number): BodyLabelKind | null {
+  const body = bodyById(id);
+  if (!body) return null;
+  if (body.appearance === "sun") return "sun";
+  if (body.appearance === "moon" || body.placement === "satellite" || body.primaryId != null) return "moon";
+  if (body.radiusKm == null) return "barycenter";
+  return "planet";
+}
+
+/** Screen-name group for the viewing center. An unlisted center stays unlabeled by these groups. */
+export function centerLabelKind(name: string | null): BodyLabelKind | null {
+  if (!name) return null;
+  const known = orbitCenter(name);
+  const canonical = known?.name ?? name.trim().toUpperCase();
+  if (/(?:^| )L[12]$/.test(canonical)) return "lagrange";
+  if (canonical.includes("BARYCENTER")) return "barycenter";
+  const body = bodyByName(canonical);
+  return body ? bodyLabelKind(body.id) : null;
 }
 
 /** SANA name for an SPK center. An id outside the catalog stays numeric. */

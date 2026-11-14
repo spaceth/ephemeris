@@ -12,6 +12,7 @@ export function Welcome({
   webgl,
   onPick,
   onExample,
+  onExplore,
   leaving,
 }: {
   examples: readonly Example[];
@@ -20,6 +21,7 @@ export function Welcome({
   webgl: boolean;
   onPick: (event: ChangeEvent<HTMLInputElement>) => void;
   onExample: (id: string) => void;
+  onExplore: () => void;
   leaving: boolean;
 }) {
   useEffect(() => {
@@ -63,7 +65,7 @@ export function Welcome({
       <div className="solar-copy">
         <h2>The Solar System</h2>
         <p>Explore the solar system, the vanilla playground of this visualization with data from the planetary and lunar ephemerides DE440.</p>
-        <button type="button" className="round-control pressable">Explore</button>
+        <button type="button" className="round-control pressable" onClick={onExplore} disabled={loading}>Explore</button>
       </div>
     </div>
     </>

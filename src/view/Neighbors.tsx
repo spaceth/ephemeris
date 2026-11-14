@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import * as THREE from "three";
 import { toScene } from "../core/scene";
 import { queueSceneLabel } from "./labelLayout";
+import { bodyLabelKind } from "../core/ephemeris/bodies";
 import { centerNaif, defaultNeighbors, place } from "../core/ephemeris/place";
 import { loadPlanetarySnapshot } from "../core/ephemeris/planetary";
 import { tdbFromTaiClock } from "../core/ephemeris/scales";
@@ -11,6 +12,7 @@ import { lightingKernel, setLightingKernel } from "../core/ephemeris/sunLight";
 import { BodyMesh } from "./BodyMesh";
 import type { SphereObstacle } from "./CameraDirector";
 import type { SceneClock } from "./types";
+import type { LabelToggles } from "./Visualization";
 
 const LABEL_SCRATCH = new THREE.Vector3();
 const LABEL_FORWARD = new THREE.Vector3();
@@ -31,6 +33,7 @@ function placeNeighborLabel(
   camera: THREE.Camera,
   size: { width: number; height: number },
   pixelRatio: number,
+  bodyId: number,
 ) {
   if (!el) return;
   if (!show) {
@@ -46,9 +49,10 @@ function placeNeighborLabel(
   const pixel = Math.max(pixelRatio, 1);
   const lift = screenLift(camera, world, radiusKm, size.height);
   const x = Math.round((LABEL_SCRATCH.x * 0.5 + 0.5) * size.width * pixel) / pixel;
-  const y = Math.round(((-LABEL_SCRATCH.y * 0.5 + 0.5) * size.height - lift) * pixel) / pixel;
+  const yBody = Math.round(((-LABEL_SCRATCH.y * 0.5 + 0.5) * size.height) * pixel) / pixel;
+  const y = Math.round((yBody - lift) * pixel) / pixel;
   el.textContent = el.dataset.name ?? "";
-  queueSceneLabel(el, x, y, false);
+  queueSceneLabel(el, x, y, false, bodyId, x, yBody, lift);
 }
 
 /**
@@ -61,7 +65,7 @@ export function Neighbors({
   centerName,
   realistic,
   clouds,
-  showNames,
+  labels,
   obstacles,
   reach,
   labelEls,
@@ -70,7 +74,7 @@ export function Neighbors({
   centerName: string | null;
   realistic: boolean;
   clouds: boolean;
-  showNames: boolean;
+  labels: LabelToggles;
   obstacles: RefObject<SphereObstacle[]>;
   reach: RefObject<number>;
   labelEls: RefObject<HTMLSpanElement | null>[];
@@ -135,7 +139,8 @@ export function Neighbors({
       list?.push(slot);
       farthest = Math.max(farthest, Math.hypot(x, y, z) + (body.radiusKm ?? 0));
       if (label) label.dataset.name = body.label;
-      placeNeighborLabel(label, group.position, body.radiusKm ?? 0, showNames, camera, size, gl.getPixelRatio());
+      const kind = bodyLabelKind(body.id);
+      placeNeighborLabel(label, group.position, body.radiusKm ?? 0, kind != null && labels[kind], camera, size, gl.getPixelRatio(), body.id);
     });
     hideRest(neighbors.length);
     reach.current = farthest;
@@ -143,17 +148,27 @@ export function Neighbors({
 
   return (
     <>
-      {neighbors.map((body, index) => (
-        <group
-          key={body.id}
-          ref={(node) => {
-            groups.current[index] = node;
-          }}
-          visible={false}
-        >
-          <BodyMesh record={body} radiusKm={body.radiusKm} realistic={realistic} clouds={clouds} clock={clock} />
-        </group>
-      ))}
+      {neighbors.map((body, index) => {
+        const kind = bodyLabelKind(body.id);
+        return (
+          <group
+            key={body.id}
+            ref={(node) => {
+              groups.current[index] = node;
+            }}
+            visible={false}
+          >
+            <BodyMesh
+              record={body}
+              radiusKm={body.radiusKm}
+              realistic={realistic}
+              clouds={clouds}
+              clock={clock}
+              mark={kind == null || labels[kind]}
+            />
+          </group>
+        );
+      })}
     </>
   );
 }
