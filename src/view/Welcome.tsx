@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { ChevronIcon } from "./icons";
 import { useDismiss } from "./useDismiss";
@@ -22,8 +22,15 @@ export function Welcome({
   onExample: (id: string) => void;
   leaving: boolean;
 }) {
+  useEffect(() => {
+    document.documentElement.classList.add("is-welcome");
+    return () => document.documentElement.classList.remove("is-welcome");
+  }, []);
+
+  const box = leaving ? "material is-leaving" : "material";
   return (
-    <div className={leaving ? "welcome material is-leaving" : "welcome material"}>
+    <>
+    <div className={`welcome ${box}`}>
       <div className="tight">
         <h1>Ephemeris Visualization</h1>
         <p>Upload a CCSDS OEM, or start from an example.</p>
@@ -51,6 +58,15 @@ export function Welcome({
       {error && <p className="fail" role="alert">{error}</p>}
       {!webgl && <p className="note">WebGL is unavailable. Metadata still runs.</p>}
     </div>
+    <div className={`solar-card ${box}`}>
+      <div className="solar-cover" />
+      <div className="solar-copy">
+        <h2>The Solar System</h2>
+        <p>Explore the solar system, the vanilla playground of this visualization with data from the planetary and lunar ephemerides DE440.</p>
+        <button type="button" className="round-control pressable">Explore</button>
+      </div>
+    </div>
+    </>
   );
 }
 

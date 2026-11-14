@@ -32,7 +32,12 @@ const CRAFT_ORIGIN = new Float32Array([0, 0, 0]);
 /** Framebuffer pixels across the strip. The falloff below keeps the bright core near one pixel. */
 const ARC_WIDTH_PX = 2;
 
-export type TrajectoryLine = "all" | "trail" | "hidden";
+export type TrajectoryLine = "all" | "trail" | "short" | "hidden";
+
+/** Share of an arc kept behind the craft. The older end of that piece fades out. */
+const SHORT_TRAIL_FRACTION = 0.08;
+/** Portion of the short trail, measured from the older end, that fades in. */
+const SHORT_TRAIL_FADE = 0.45;
 
 type OrbitProps = {
   arcs: ArcBuffer[];
@@ -45,7 +50,7 @@ type OrbitProps = {
   centerLabel: string;
   /** Name drawn on the spacecraft. Empty hides the label. */
   objectLabel: string;
-  /** Full arc, the path already flown, or nothing. */
+  /** Full arc, the path already flown, a short fading trail, or nothing. */
   trajectoryLine: TrajectoryLine;
   /** CSS hex color for the trajectory. */
   trajectoryColor: string;
@@ -77,6 +82,47 @@ type OrbitProps = {
   capturing: boolean;
 };
 
+/** Fade along the short trail. 0 at the older end, solid once `SHORT_TRAIL_FADE` of the window is passed. */
+function shortTrailFade(oldest: number, newest: number, time: number): number {
+  const span = newest - oldest;
+  if (!(span > 0)) return 1;
+  const u = (time - oldest) / span;
+  if (u <= 0) return 0;
+  if (u >= SHORT_TRAIL_FADE) return 1;
+  const x = u / SHORT_TRAIL_FADE;
+  return x * x * (3 - 2 * x);
+}
+
+function shortTrailOldest(start: number, stop: number, time: number): number {
+  const span = stop - start;
+  const window = span > 0 ? span * SHORT_TRAIL_FRACTION : 0;
+  return Math.max(start, time - window);
+}
+
+/** Per-segment fade. 0 at the older end of a short trail, 1 along a full arc. */
+function withTrailFade(vertex: string, fragment: string): { vertex: string; fragment: string } {
+  return {
+    vertex: vertex
+      .replace(
+        "attribute vec3 instanceEnd;",
+        "attribute vec3 instanceEnd;\n\t\tattribute float instanceFadeStart;\n\t\tattribute float instanceFadeEnd;\n\t\tvarying float vFade;",
+      )
+      .replace(
+        "void main() {",
+        "void main() {\n\t\t\tvFade = ( position.y < 0.5 ) ? instanceFadeStart : instanceFadeEnd;",
+      ),
+    fragment: fragment
+      .replace(
+        "uniform float opacity;",
+        "uniform float opacity;\n\t\tuniform float shortTrail;\n\t\tvarying float vFade;",
+      )
+      .replace(
+        "float alpha = opacity;",
+        "float alpha = opacity;\n\t\t\talpha *= mix( 1.0, vFade, shortTrail );",
+      ),
+  };
+}
+
 /** Coverage falloff across the screen-space strip, so the arc edge blends out. */
 function withEdgeFalloff(source: string): string {
   return source
@@ -107,26 +153,120 @@ function lastAtOrBefore(times: Float32Array, t: number): number {
   return found;
 }
 
+/** Writes the short trail into the line buffers. Returns the number of segments drawn. */
+function writeShortTrail(
+  positions: Float32Array,
+  times: Float32Array,
+  time: number,
+  posData: Float32Array,
+  fadeStart: Float32Array,
+  fadeEnd: Float32Array,
+): number {
+  const tip = lastAtOrBefore(times, time);
+  if (tip < 0 || times.length < 2) return 0;
+  const newest = Math.min(time, times[times.length - 1]);
+  const oldest = shortTrailOldest(times[0], times[times.length - 1], newest);
+  if (!(newest > oldest)) return 0;
+  const tail = lastAtOrBefore(times, oldest);
+  if (tail < 0) return 0;
+  const capacity = Math.min(Math.floor(posData.length / 6), fadeStart.length, fadeEnd.length);
+  let count = 0;
+  let px = 0;
+  let py = 0;
+  let pz = 0;
+  let pf = 0;
+  let has = false;
+  const emit = (x: number, y: number, z: number, fade: number) => {
+    if (!has) {
+      px = x;
+      py = y;
+      pz = z;
+      pf = fade;
+      has = true;
+      return;
+    }
+    if (count >= capacity) return;
+    const o = count * 6;
+    posData[o] = px;
+    posData[o + 1] = py;
+    posData[o + 2] = pz;
+    posData[o + 3] = x;
+    posData[o + 4] = y;
+    posData[o + 5] = z;
+    fadeStart[count] = pf;
+    fadeEnd[count] = fade;
+    count += 1;
+    px = x;
+    py = y;
+    pz = z;
+    pf = fade;
+  };
+  const vertex = (index: number, at: number) => {
+    const i = index * 3;
+    emit(positions[i], positions[i + 1], positions[i + 2], shortTrailFade(oldest, newest, at));
+  };
+  const lerp = (index: number, u: number, at: number) => {
+    const i = index * 3;
+    const j = i + 3;
+    emit(
+      positions[i] + (positions[j] - positions[i]) * u,
+      positions[i + 1] + (positions[j + 1] - positions[i + 1]) * u,
+      positions[i + 2] + (positions[j + 2] - positions[i + 2]) * u,
+      shortTrailFade(oldest, newest, at),
+    );
+  };
+  if (tail < tip) {
+    const span = times[tail + 1] - times[tail];
+    const u = span > 0 ? (oldest - times[tail]) / span : 0;
+    if (u > 0) lerp(tail, Math.min(u, 1), oldest);
+    else vertex(tail, times[tail]);
+    for (let i = tail + 1; i <= tip; i += 1) vertex(i, times[i]);
+  } else if (tip < times.length - 1) {
+    const span = times[tip + 1] - times[tip];
+    const u = span > 0 ? (oldest - times[tip]) / span : 0;
+    lerp(tip, Math.max(0, Math.min(u, 1)), oldest);
+  }
+  if (tip < times.length - 1) {
+    const span = times[tip + 1] - times[tip];
+    const u = span > 0 ? (newest - times[tip]) / span : 1;
+    lerp(tip, Math.max(0, Math.min(u, 1)), newest);
+  } else if (tail === tip) {
+    vertex(tip, times[tip]);
+  }
+  return count;
+}
+
 function ArcLine({
   positions,
   times,
   opacity,
   color,
-  trail,
+  mode,
   clock,
 }: {
   positions: Float32Array;
   times: Float32Array;
   opacity: number;
   color: string;
-  trail: boolean;
+  mode: TrajectoryLine;
   clock: { current: SceneClock };
 }) {
   const line = useMemo(() => {
     const geometry = new LineGeometry();
     geometry.setPositions(positions);
+    const segments = Math.max(0, positions.length / 3 - 1);
     const ends = geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
     ends.data.setUsage(THREE.DynamicDrawUsage);
+    const fadeStart = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(segments, 1)), 1);
+    const fadeEnd = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(segments, 1)), 1);
+    fadeStart.setUsage(THREE.DynamicDrawUsage);
+    fadeEnd.setUsage(THREE.DynamicDrawUsage);
+    for (let i = 0; i < fadeStart.count; i += 1) {
+      fadeStart.setX(i, 1);
+      fadeEnd.setX(i, 1);
+    }
+    geometry.setAttribute("instanceFadeStart", fadeStart);
+    geometry.setAttribute("instanceFadeEnd", fadeEnd);
     const material = new LineMaterial({
       color,
       transparent: true,
@@ -135,16 +275,22 @@ function ArcLine({
       toneMapped: false,
     });
     material.uniforms.linewidth.value = ARC_WIDTH_PX;
-    material.fragmentShader = withEdgeFalloff(material.fragmentShader);
+    material.uniforms.shortTrail = { value: 0 };
+    const faded = withTrailFade(material.vertexShader, material.fragmentShader);
+    material.vertexShader = faded.vertex;
+    material.fragmentShader = withEdgeFalloff(faded.fragment);
     const next = new Line2(geometry, material);
     next.frustumCulled = false;
     return next;
   }, [positions]);
   const tip = useRef(-1);
+  const rewritten = useRef(false);
   useLayoutEffect(() => {
     line.material.color.set(color);
     line.material.opacity = opacity;
-  }, [line, color, opacity]);
+    line.material.uniforms.shortTrail.value = mode === "short" ? 1 : 0;
+    if (mode === "short") line.geometry.instanceCount = 0;
+  }, [line, color, opacity, mode]);
   useEffect(() => {
     return () => {
       line.geometry.dispose();
@@ -161,7 +307,55 @@ function ArcLine({
       end.data.addUpdateRange(segment * end.data.stride + end.offset, 3);
       end.needsUpdate = true;
     };
-    if (!trail || times.length < 2) {
+    const fadeStart = geometry.getAttribute("instanceFadeStart") as THREE.InstancedBufferAttribute;
+    const fadeEnd = geometry.getAttribute("instanceFadeEnd") as THREE.InstancedBufferAttribute;
+    if (rewritten.current && mode !== "short") {
+      const posData = end.data.array as Float32Array;
+      for (let i = 0; i < full; i += 1) {
+        const p = i * 3;
+        const o = i * 6;
+        posData[o] = positions[p];
+        posData[o + 1] = positions[p + 1];
+        posData[o + 2] = positions[p + 2];
+        posData[o + 3] = positions[p + 3];
+        posData[o + 4] = positions[p + 4];
+        posData[o + 5] = positions[p + 5];
+      }
+      end.data.addUpdateRange(0, full * 6);
+      end.needsUpdate = true;
+      (fadeStart.array as Float32Array).fill(1);
+      (fadeEnd.array as Float32Array).fill(1);
+      fadeStart.addUpdateRange(0, fadeStart.count);
+      fadeEnd.addUpdateRange(0, fadeEnd.count);
+      fadeStart.needsUpdate = true;
+      fadeEnd.needsUpdate = true;
+      rewritten.current = false;
+      tip.current = -1;
+    }
+    if (mode === "short") {
+      const drawn = writeShortTrail(
+        positions,
+        times,
+        clock.current.t,
+        end.data.array as Float32Array,
+        fadeStart.array as Float32Array,
+        fadeEnd.array as Float32Array,
+      );
+      rewritten.current = true;
+      tip.current = -1;
+      line.visible = drawn > 0;
+      if (drawn > 0) {
+        end.data.addUpdateRange(0, drawn * 6);
+        end.needsUpdate = true;
+        fadeStart.addUpdateRange(0, drawn);
+        fadeEnd.addUpdateRange(0, drawn);
+        fadeStart.needsUpdate = true;
+        fadeEnd.needsUpdate = true;
+      }
+      if (geometry.instanceCount !== drawn) geometry.instanceCount = drawn;
+      return;
+    }
+    if (mode !== "trail" || times.length < 2) {
       if (tip.current >= 0) {
         restore(tip.current);
         tip.current = -1;
@@ -227,7 +421,7 @@ function PlacedArc({
   viewingCenter,
   opacity,
   color,
-  trail,
+  mode,
   clock,
   reach,
 }: {
@@ -235,7 +429,7 @@ function PlacedArc({
   viewingCenter: string | null;
   opacity: number;
   color: string;
-  trail: boolean;
+  mode: TrajectoryLine;
   clock: { current: SceneClock };
   reach: RefObject<number>;
 }) {
@@ -273,7 +467,7 @@ function PlacedArc({
   });
   return (
     <group ref={group} visible={false}>
-      <ArcLine positions={positions} times={arc.times} opacity={opacity} color={color} trail={trail} clock={clock} />
+      <ArcLine positions={positions} times={arc.times} opacity={opacity} color={color} mode={mode} clock={clock} />
     </group>
   );
 }
@@ -556,7 +750,7 @@ export function OrbitView({
           viewingCenter={centerName}
           opacity={arc.segmentIndex === selected ? 0.95 : 0.32}
           color={trajectoryColor}
-          trail={trajectoryLine === "trail"}
+          mode={trajectoryLine}
           clock={clock}
           reach={reach}
         />

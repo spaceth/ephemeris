@@ -11,6 +11,7 @@ export type Stars = "on" | "off";
 const LINES: { id: TrajectoryLine; label: string }[] = [
   { id: "all", label: "All" },
   { id: "trail", label: "Trail" },
+  { id: "short", label: "Short Trail" },
   { id: "hidden", label: "Hidden" },
 ];
 
