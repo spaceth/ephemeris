@@ -633,9 +633,10 @@ function SceneLabels({
 
 /** Runs after the names are queued, so a covering label can be moved aside. */
 function LabelSettle() {
+  // Priority stays 0. A positive priority makes this callback the renderer and skips the scene draw.
   useFrame(() => {
     settleSceneLabels();
-  }, 1);
+  });
   return null;
 }
 
