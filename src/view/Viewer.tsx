@@ -141,11 +141,14 @@ export function Viewer({
     return () => onChrome({});
   }, [narrow, onChrome, panelHeight, panelOpen, solarMode]);
 
+  const state = file ? displayedState(file, session.t, session.segment) : null;
+  const stateNote = gate === "view" && state && !state.ok ? state.message : null;
+  const heldNote = useHeldNote(stateNote);
+
   if (!file && !solarMode) return null;
 
   const clockFile = solarMode ? SOLAR_FILE : file;
   const utc = clockFile ? formatEpoch(clockFile, session.t) : null;
-  const state = file ? displayedState(file, session.t, session.segment) : null;
   const liveAt = file ? liveSeconds(file, session.now) : solarSeconds(session.now);
   const showingLive = liveAt != null && Math.abs(session.t - liveAt) <= LIVE_WINDOW;
   const covering = file ? file.segments.filter((item) => covers(item, session.t)) : [];
@@ -285,7 +288,7 @@ export function Viewer({
           <span key={index} ref={slot} className="scene-label" />
         ))}
       </div>
-      {viewing && state && !state.ok && <p className="banner">{state.message}</p>}
+      {heldNote && <p className="banner">{heldNote}</p>}
       {!viewing && (
         <div className="opening" role="status" aria-live="polite">
           <p>Opening</p>
@@ -378,4 +381,21 @@ export function Viewer({
       )}
     </>
   );
+}
+
+/** A segment handoff is shorter than this. A miss that stays is shown. */
+const BANNER_HOLD_MS = 500;
+
+function useHeldNote(message: string | null): string | null {
+  const [ready, setReady] = useState<string | null>(null);
+  useEffect(() => {
+    if (message == null) {
+      setReady(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setReady(message), BANNER_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+  if (message == null || ready !== message) return null;
+  return message;
 }

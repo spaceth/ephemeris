@@ -70,11 +70,12 @@ export function useEphemeris() {
 
   const syncSegment = useCallback((at: number) => {
     const current = fileRef.current;
-    if (!current) return;
+    if (!current) return false;
     const next = segmentAtTime(current, at, clockRef.current.segment);
-    if (next === clockRef.current.segment) return;
+    if (next === clockRef.current.segment) return false;
     clockRef.current.segment = next;
     setSegment(next);
+    return true;
   }, []);
 
   const seek = useCallback((next: number) => {
@@ -314,8 +315,8 @@ export function useEphemeris() {
           setPlaying(false);
         }
         clockRef.current.t = next;
-        syncSegment(next);
-        if (!playingRef.current || stamp - painted > 40) {
+        const segmentMoved = syncSegment(next);
+        if (segmentMoved || !playingRef.current || stamp - painted > 40) {
           painted = stamp;
           setT(next);
         }

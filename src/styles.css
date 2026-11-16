@@ -705,20 +705,42 @@ label.round-control { display: inline-flex; align-items: center; cursor: pointer
   max-width: 100%;
 }
 
-.clock-iso-input {
-  width: auto;
+.clock-iso-field {
+  display: inline-grid;
+  align-items: center;
+  justify-items: stretch;
   max-width: 100%;
-  border: 0;
   border-bottom: 1px dotted var(--muted);
-  background: transparent;
-  padding: 0;
+  padding-bottom: 2px;
   font-size: 11px;
-  color: var(--fg);
 }
 
-.clock-iso-input:focus { outline: none; border-bottom-color: var(--fg); }
+.clock-iso-field > * { grid-area: 1 / 1; }
 
-.clock-iso-input[aria-invalid="true"] { border-bottom-color: var(--error); }
+.clock-iso-field:focus-within { border-bottom-color: var(--fg); }
+
+.clock-iso-field.is-invalid { border-bottom-color: var(--error); }
+
+.clock-iso-field .clock-sizer {
+  display: inline-grid;
+}
+
+.clock-iso-field .clock-sizer > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.clock-iso-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fg);
+  caret-color: var(--fg);
+}
+
+.clock-iso-input:focus { outline: none; }
 
 .clock-edit.round-control {
   flex: none;
