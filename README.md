@@ -275,7 +275,9 @@ Float64 is the working type for states, coefficients, and time. The scene then s
 
 Stars are the Extended Hipparcos Compilation (XHIP; Anderson & Francis 2012, *Astronomy Letters* 38, 331) cut at visual magnitude 6, as packaged for ofrohn/d3-celestial and stored in `public/skymap.json`. Each star is placed from its catalogue right ascension and declination on the EME2000 axes, then mapped into the scene the same way as a trajectory. Proper motion, parallax, annual aberration, and the ICRS frame bias are left out. At the scale of these point sprites the bias is far below a pixel. The stars are a backdrop.
 
-Color is a B−V lookup on the d3-celestial red-to-blue ramp, then mixed halfway back toward white so the screen saturation is half of that ramp. A missing B−V stays white. Brighter stars are drawn larger, with a floor so the faintest ones remain a small point.
+Color is a B−V lookup on the d3-celestial red-to-blue ramp, then mixed halfway back toward white so the screen saturation is half of that ramp. A missing B−V stays white. Brighter stars are drawn larger, with a floor so the faintest ones remain a small point. The minimal view can draw the same stars with the saturation set to zero, so they are gray.
+
+The Constellation label draws the IAU stick figures and the constellation names from the same d3-celestial release: `constellations.lines.json` for the lines and `constellations.json` for the names. Both are stored together in `public/constellations.json`. Serpens is the one IAU constellation drawn as two figures, Caput and Cauda. The lines share the star sphere and stay behind every body. The pill starts off.
 
 ### Body maps
 
@@ -317,6 +319,7 @@ Scientific series that are not covered by the MIT grant alone:
 - DE440 and `gm_de440.tpc` are NAIF generic kernels from the JPL server named in the manifest. The repository publishes the trimmed SPK and the constants in the companion JSON, identified by the SHA-256 values above.
 - The leap-second table is the IERS Bulletin C list named in `src/core/time.ts`.
 - XHIP positions are used as packaged by d3-celestial. The citation is Anderson & Francis 2012.
+- Constellation figures and names are the IAU set packaged by Olaf Frohn in d3-celestial. Copyright (c) 2015 Olaf Frohn, BSD-3-Clause. The notice is kept in `public/constellations.json`.
 - The lunar color map is a NASA SVS product, a United States Government work.
 - CSPICE N0067, through spiceypy, is the validation reader. It is installed in the gitignored `data/` environment and is not a runtime dependency.
 

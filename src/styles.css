@@ -70,6 +70,15 @@ button:focus-visible,
   will-change: transform;
 }
 
+.constellation-names {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.constellation-name { color: #c7c7cc; }
+
 .welcome-bg {
   position: absolute;
   inset: 0;
@@ -678,7 +687,49 @@ label.round-control { display: inline-flex; align-items: center; cursor: pointer
 
 .clock-iso:hover { color: var(--fg); }
 
+.clock-iso-line,
+.clock-iso-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.clock-iso-edit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.clock-iso-input {
+  width: auto;
+  max-width: 100%;
+  border: 0;
+  border-bottom: 1px dotted var(--muted);
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: var(--fg);
+}
+
+.clock-iso-input:focus { outline: none; border-bottom-color: var(--fg); }
+
+.clock-iso-input[aria-invalid="true"] { border-bottom-color: var(--error); }
+
+.clock-edit.round-control {
+  flex: none;
+  padding: 0 7px;
+  font-size: 10px;
+  line-height: 16px;
+}
+
 .clock-note { font-size: 11px; color: var(--muted); }
+
+.clock-edit-error { color: var(--error); }
 
 .play-btn {
   display: inline-flex;

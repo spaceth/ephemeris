@@ -32,11 +32,14 @@ export function CaptureBridge({
   handle,
   exporting,
   labels,
+  skyLabels,
 }: {
   handle: RefObject<CaptureHandle | null>;
   exporting: RefObject<boolean>;
   /** Body, craft, and neighbor names. They are drawn onto the frame after the scene. */
   labels: readonly RefObject<HTMLElement | null>[];
+  /** Constellation names. Children of this element are drawn with the other labels. */
+  skyLabels?: RefObject<HTMLElement | null>;
 }) {
   const get = useThree((state) => state.get);
   const setSize = useThree((state) => state.setSize);
@@ -47,7 +50,9 @@ export function CaptureBridge({
   const job = useRef<Job | null>(null);
   const scratch = useRef<HTMLCanvasElement | null>(null);
   const labelsRef = useRef(labels);
+  const skyRef = useRef(skyLabels);
   labelsRef.current = labels;
+  skyRef.current = skyLabels;
 
   useEffect(() => {
     let alive = true;
@@ -145,7 +150,7 @@ export function CaptureBridge({
         const context = copy.getContext("2d");
         if (!context) throw new Error("The view could not be copied.");
         context.drawImage(buffer, 0, 0);
-        paintLabels(context, labelsRef.current, goal.height, saved.current?.height ?? goal.height);
+        paintLabels(context, labelsRef.current, skyRef.current?.current ?? null, goal.height, saved.current?.height ?? goal.height);
         copy.toBlob((blob) => {
           if (blob) pending.resolve(blob);
           else pending.reject(new Error("The view could not be encoded."));
@@ -163,14 +168,23 @@ export function CaptureBridge({
 function paintLabels(
   context: CanvasRenderingContext2D,
   labels: readonly RefObject<HTMLElement | null>[],
+  sky: HTMLElement | null,
   exportHeight: number,
   liveHeight: number,
 ) {
   const scale = liveHeight > 0 ? exportHeight / liveHeight : 1;
   const gap = 8 * scale;
+  const nodes: HTMLElement[] = [];
   for (const slot of labels) {
-    const el = slot.current;
-    if (!el || el.style.visibility === "hidden") continue;
+    if (slot.current) nodes.push(slot.current);
+  }
+  if (sky) {
+    for (const child of sky.children) {
+      if (child instanceof HTMLElement) nodes.push(child);
+    }
+  }
+  for (const el of nodes) {
+    if (el.style.visibility === "hidden") continue;
     const text = el.textContent?.trim() ?? "";
     if (!text) continue;
     const placed = el.style.transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);

@@ -1,5 +1,5 @@
 import type { OemFile } from "../core";
-import { formatTaiSeconds } from "../core/time";
+import { formatTaiSeconds, parseUtcEpoch, taiSecondsBetween, type TaiOrigin } from "../core/time";
 
 const MONTHS = [
   "January",
@@ -33,6 +33,21 @@ export function formatEpoch(file: OemFile, seconds: number, digits = 3): { text:
  */
 export const READABLE_UTC_WIDTH = "30 September 8888 UTC 88:88:88";
 export const ISO_UTC_WIDTH = "8888-88-88T88:88:88.888";
+
+const MINUTE_RE = /^(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{3})T\d{2}:\d{2}$/;
+
+/**
+ * TAI seconds from `origin` for a UTC instant typed next to the ISO clock.
+ * Accepts the displayed form, a trailing Z, a space instead of T, and a time with no seconds.
+ */
+export function utcTextToSeconds(origin: TaiOrigin, text: string): number {
+  let value = text.trim();
+  if (value.endsWith("Z") || value.endsWith("z")) value = value.slice(0, -1).trim();
+  value = value.replace(/\s+/, "T");
+  if (MINUTE_RE.test(value)) value += ":00";
+  const parsed = parseUtcEpoch(value);
+  return taiSecondsBetween(parsed.tai1, parsed.tai2, origin.tai1, origin.tai2);
+}
 
 /** Calendar reading of a UTC ISO epoch. Seconds stay whole; the ISO string keeps the fraction. */
 export function readableUtc(iso: string): string | null {

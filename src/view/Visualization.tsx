@@ -6,7 +6,7 @@ import type { OrbitLineId, OrbitToggles } from "./orbitTrack";
 import { HideButton } from "./HideButton";
 import { useBoxMotion } from "./useBoxMotion";
 
-export type LabelKind = "object" | BodyLabelKind;
+export type LabelKind = "object" | BodyLabelKind | "constellation";
 export type LabelToggles = Record<LabelKind, boolean>;
 export type RenderStyle = "minimal" | "realistic";
 
@@ -24,6 +24,7 @@ export const DEFAULT_LABELS: LabelToggles = {
   moon: true,
   barycenter: true,
   lagrange: true,
+  constellation: false,
 };
 
 const LABELS: { id: LabelKind; label: string }[] = [
@@ -33,6 +34,7 @@ const LABELS: { id: LabelKind; label: string }[] = [
   { id: "moon", label: "Moon" },
   { id: "barycenter", label: "Barycenter" },
   { id: "lagrange", label: "Lagrange" },
+  { id: "constellation", label: "Constellation" },
 ];
 
 const STYLES: { id: RenderStyle; label: string }[] = [
@@ -121,8 +123,8 @@ export function Visualization({
                 </button>
               ))}
             </div>
-            {renderStyle === "realistic" && (
-              <div className="viz-choices" role="group" aria-label="Realistic options">
+            <div className="viz-choices" role="group" aria-label="Scene options">
+              {renderStyle === "realistic" && (
                 <button
                   type="button"
                   className="round-control pressable"
@@ -131,16 +133,16 @@ export function Visualization({
                 >
                   Earth Cloud
                 </button>
-                <button
-                  type="button"
-                  className="round-control pressable"
-                  aria-pressed={stars}
-                  onClick={onStars}
-                >
-                  Background Stars
-                </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                className="round-control pressable"
+                aria-pressed={stars}
+                onClick={onStars}
+              >
+                Background Stars
+              </button>
+            </div>
           </section>
           <section className="viz-group">
             {showTrajectory && (

@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { OemFile } from "../core";
 import { CameraPicker } from "./CameraPicker";
 import type { CameraMode } from "./camera";
@@ -7,7 +7,7 @@ import { moveTrim } from "./capture";
 import { CameraIcon, FramesIcon, PauseIcon, PlayIcon } from "./icons";
 import { HideButton } from "./HideButton";
 import { useBoxMotion } from "./useBoxMotion";
-import { ISO_UTC_WIDTH, READABLE_UTC_WIDTH } from "./format";
+import { ISO_UTC_WIDTH, READABLE_UTC_WIDTH, utcTextToSeconds } from "./format";
 
 const SPEEDS = [1, 30, 120, 600, 3600] as const;
 
@@ -61,8 +61,50 @@ export function Clock({
   const coverage = span && span.stop > span.start ? span : null;
   const rootRef = useRef<HTMLDivElement>(null);
   const scrubRef = useRef<HTMLDivElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
   const [arrived, setArrived] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
   useBoxMotion(open, rootRef);
+  useEffect(() => {
+    if (!editing) return;
+    timeInputRef.current?.focus();
+    timeInputRef.current?.select();
+  }, [editing]);
+
+  function beginEdit() {
+    if (!isoTime || !coverage || capture.busy) return;
+    if (playing) onTogglePlay();
+    setDraft(isoTime);
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setEditError(null);
+  }
+
+  function commitEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!file.origin || !coverage) return;
+    let seconds: number;
+    try {
+      seconds = utcTextToSeconds(file.origin, draft);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setEditError(message.startsWith("Epoch") ? "Enter a UTC time, YYYY-MM-DDThh:mm:ss" : "That UTC time cannot be used");
+      return;
+    }
+    if (seconds < coverage.start - 1e-3 || seconds > coverage.stop + 1e-3) {
+      setEditError("Outside this ephemeris");
+      return;
+    }
+    onSeek(seconds);
+    setEditing(false);
+    setEditError(null);
+  }
   const clockClass = ["clock", "material", open ? "" : "is-collapsed", arrived ? "" : "tool-enter"].filter(Boolean).join(" ");
   return (
     <div
@@ -89,10 +131,53 @@ export function Clock({
             <span>{readableTime}</span>
           </span>
           {isoTime && (
-            <button type="button" className="clock-iso nums" onClick={() => void navigator.clipboard.writeText(isoTime)}>
-              <span className="clock-sizer" aria-hidden="true">{ISO_UTC_WIDTH}</span>
-              <span>{isoTime}</span>
-            </button>
+            <span className="clock-iso-line">
+              {editing ? (
+                <span className="clock-iso-edit">
+                  <form className="clock-iso-form" onSubmit={commitEdit}>
+                    <input
+                      ref={timeInputRef}
+                      className="clock-iso-input nums"
+                      aria-label="UTC date and time"
+                      aria-invalid={editError != null}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      style={{ width: `${Math.max(draft.length, 1) + 1}ch` }}
+                      value={draft}
+                      onChange={(event) => {
+                        setDraft(event.target.value);
+                        if (editError) setEditError(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelEdit();
+                        }
+                      }}
+                    />
+                    <button type="submit" className="round-control pressable clock-edit">Set</button>
+                  </form>
+                  {editError && <span className="clock-note clock-edit-error" role="alert">{editError}</span>}
+                </span>
+              ) : (
+                <>
+                  <button type="button" className="clock-iso nums" title="Copy UTC time" onClick={() => void navigator.clipboard.writeText(isoTime)}>
+                    <span className="clock-sizer" aria-hidden="true">{ISO_UTC_WIDTH}</span>
+                    <span>{isoTime}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="round-control pressable clock-edit"
+                    aria-label="Edit date and time"
+                    disabled={!coverage || capture.busy}
+                    onClick={beginEdit}
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
+            </span>
           )}
           {timeNote && <span className="clock-note nums">{timeNote}</span>}
         </span>

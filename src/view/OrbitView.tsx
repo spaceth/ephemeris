@@ -16,6 +16,7 @@ import { lightingKernel } from "../core/ephemeris/sunLight";
 import { BodyMesh } from "./BodyMesh";
 import { CameraDirector } from "./CameraDirector";
 import { CaptureBridge } from "./CaptureBridge";
+import { Constellations } from "./Constellations";
 import type { CaptureHandle } from "./CaptureBridge";
 import type { SphereObstacle } from "./CameraDirector";
 import { Neighbors } from "./Neighbors";
@@ -67,11 +68,13 @@ type OrbitProps = {
   realistic: boolean;
   /** Earth day map with clouds. Ignored unless realistic Earth is showing. */
   clouds: boolean;
-  /** Star field. Ignored unless realistic is showing. */
+  /** Star field. Minimal draws it gray. */
   stars: boolean;
   /** Screen labels. The scene writes their position each frame. */
   centerLabelEl: RefObject<HTMLSpanElement | null>;
   objectLabelEl: RefObject<HTMLSpanElement | null>;
+  /** Constellation names are written into this overlay. */
+  constellationNames: RefObject<HTMLDivElement | null>;
   /** Equatorial radius of the body at the origin. Null draws an origin mark. */
   bodyRadiusKm: number | null;
   resetToken: number;
@@ -712,6 +715,7 @@ export function OrbitView({
   stars,
   centerLabelEl,
   objectLabelEl,
+  constellationNames,
   bodyRadiusKm,
   resetToken,
   cameraMode,
@@ -745,9 +749,11 @@ export function OrbitView({
         handle={capture}
         exporting={exporting}
         labels={[centerLabelEl, objectLabelEl, ...neighborLabelEls]}
+        skyLabels={constellationNames}
       />
       <color attach="background" args={["#000000"]} />
-      {realistic && stars && <StarField />}
+      {stars && <StarField saturation={realistic ? 0.5 : 0} />}
+      {labels.constellation && <Constellations labelRoot={constellationNames} />}
       <BodyMesh
         record={centerBody}
         radiusKm={bodyRadiusKm}

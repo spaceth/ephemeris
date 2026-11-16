@@ -765,6 +765,14 @@ describe("XHIP stars", () => {
     expect(starColor(null)).toEqual([1, 1, 1]);
   });
 
+  it("draws a gray star when saturation is zero", () => {
+    const gray = starColor(1.85, 0);
+    expect(gray[0]).toBeCloseTo(gray[1], 6);
+    expect(gray[1]).toBeCloseTo(gray[2], 6);
+    expect(gray[0]).toBeGreaterThan(0);
+    expect(gray[0]).toBeLessThan(1);
+  });
+
   it("ships the magnitude 6 catalog", () => {
     const sky = JSON.parse(readFileSync("public/skymap.json", "utf8")) as {
       catalog: string;

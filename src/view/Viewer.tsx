@@ -75,11 +75,14 @@ export function Viewer({
   const [labels, setLabels] = useState<LabelToggles>(DEFAULT_LABELS);
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("minimal");
   const [clouds, setClouds] = useState(true);
-  const [stars, setStars] = useState(true);
+  const [minimalStars, setMinimalStars] = useState(false);
+  const [realisticStars, setRealisticStars] = useState(true);
+  const stars = renderStyle === "realistic" ? realisticStars : minimalStars;
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
   const centerLabelEl = useRef<HTMLSpanElement>(null);
   const objectLabelEl = useRef<HTMLSpanElement>(null);
+  const constellationNames = useRef<HTMLDivElement>(null);
   const neighborLabelEls = useMemo(() => {
     const slots: RefObject<HTMLSpanElement | null>[] = [];
     for (let index = 0; index < BODY_LABEL_COUNT; index += 1) slots.push({ current: null });
@@ -257,6 +260,7 @@ export function Viewer({
               stars={stars}
               centerLabelEl={centerLabelEl}
               objectLabelEl={objectLabelEl}
+              constellationNames={constellationNames}
               bodyRadiusKm={solarMode ? orbitCenter("SUN")?.radiusKm ?? null : bodyRadiusKm}
               resetToken={session.resetToken}
               cameraMode={cameraMode}
@@ -270,6 +274,7 @@ export function Viewer({
         ) : (
           <p className="banner">WebGL is unavailable. Metadata still runs.</p>
         )}
+        <div ref={constellationNames} className="constellation-names" />
         <span ref={centerLabelEl} className="scene-label">
           {solarMode ? "Sun" : shown?.centerName ?? ""}
         </span>
@@ -365,7 +370,10 @@ export function Viewer({
           onOrbit={(id: OrbitLineId) => setOrbits((current) => ({ ...current, [id]: !current[id] }))}
           onRenderStyle={setRenderStyle}
           onClouds={() => setClouds((value) => !value)}
-          onStars={() => setStars((value) => !value)}
+          onStars={() => {
+            if (renderStyle === "realistic") setRealisticStars((value) => !value);
+            else setMinimalStars((value) => !value);
+          }}
         />
       )}
     </>

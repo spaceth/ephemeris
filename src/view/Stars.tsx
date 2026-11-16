@@ -8,7 +8,7 @@ type SkyStar = [number, number, number, number | null];
 
 const SKY_URL = "/skymap.json";
 /** Inside the near end of the far plane, and far behind any body in view. */
-const SKY_RADIUS = 1e6;
+export const SKY_RADIUS = 1e6;
 
 let catalog: Promise<SkyStar[]> | null = null;
 
@@ -56,7 +56,7 @@ void main() {
 }
 `;
 
-function skyGeometry(stars: SkyStar[]): THREE.BufferGeometry {
+function skyGeometry(stars: SkyStar[], saturation: number): THREE.BufferGeometry {
   const positions = new Float32Array(stars.length * 3);
   const colors = new Float32Array(stars.length * 3);
   const sizes = new Float32Array(stars.length);
@@ -66,7 +66,7 @@ function skyGeometry(stars: SkyStar[]): THREE.BufferGeometry {
     positions[index * 3] = x * SKY_RADIUS;
     positions[index * 3 + 1] = y * SKY_RADIUS;
     positions[index * 3 + 2] = z * SKY_RADIUS;
-    const [r, g, b] = starColor(bv);
+    const [r, g, b] = starColor(bv, saturation);
     colors[index * 3] = r;
     colors[index * 3 + 1] = g;
     colors[index * 3 + 2] = b;
@@ -79,12 +79,12 @@ function skyGeometry(stars: SkyStar[]): THREE.BufferGeometry {
   return geometry;
 }
 
-/** XHIP stars, fixed in EME2000, drawn behind every body. */
-export function StarField() {
+/** XHIP stars, fixed in EME2000, drawn behind every body. Saturation 0 is gray. */
+export function StarField({ saturation }: { saturation: number }) {
   const points = useRef<THREE.Points>(null);
   const gl = useThree((state) => state.gl);
   const [stars, setStars] = useState<SkyStar[] | null>(null);
-  const geometry = useMemo(() => (stars ? skyGeometry(stars) : null), [stars]);
+  const geometry = useMemo(() => (stars ? skyGeometry(stars, saturation) : null), [stars, saturation]);
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
