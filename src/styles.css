@@ -65,7 +65,8 @@ button:focus-visible,
   letter-spacing: 0.14em;
   line-height: 1;
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   user-select: none;
   will-change: transform;
 }
@@ -77,7 +78,11 @@ button:focus-visible,
   pointer-events: none;
 }
 
-.constellation-name { color: #c7c7cc; }
+.constellation-name {
+  color: #c7c7cc;
+  pointer-events: none;
+  cursor: default;
+}
 
 .welcome-bg {
   position: absolute;

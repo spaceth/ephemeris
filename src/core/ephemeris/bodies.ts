@@ -16,7 +16,7 @@ import type { NaifId } from "./state";
 export type BodyAttitude = "earth" | "moon" | "none";
 
 /** Which mesh reads this record. Minimal style still draws a gray sphere, except the Sun. */
-export type BodyAppearance = "sun" | "earth" | "moon" | "jupiter" | "sphere";
+export type BodyAppearance = "sun" | "earth" | "moon" | "sphere";
 
 export type BodyPlacement = "snapshot" | "barycenter-offset" | "satellite";
 
@@ -26,8 +26,10 @@ export type BodyRecord = {
   name: string;
   label: string;
   radiusKm: number | null;
-  /** Map path, or none. Earth, the Moon, and Jupiter are the only filled entries. */
+  /** Color map, or none. Pluto and the moons stay untextured. */
   texture: string | null;
+  /** Radial ring strip, or none. Saturn is the only filled entry. */
+  ring: string | null;
   attitude: BodyAttitude;
   appearance: BodyAppearance;
   placement: BodyPlacement;
@@ -41,9 +43,16 @@ export type BodyRecord = {
   primaryId: number | null;
 };
 
+const MERCURY_COLOR = "/textures/mercury.jpg";
+const VENUS_COLOR = "/textures/venus.jpg";
 const EARTH_DAY = "/textures/earth-day.jpg";
 const MOON_COLOR = "/textures/moon.jpg";
+const MARS_COLOR = "/textures/mars.jpg";
 const JUPITER_COLOR = "/textures/jupiter.jpg";
+const SATURN_COLOR = "/textures/saturn.jpg";
+const SATURN_RING = "/textures/saturn-ring.png";
+const URANUS_COLOR = "/textures/uranus.jpg";
+const NEPTUNE_COLOR = "/textures/neptune.jpg";
 
 function sized(name: string): number {
   const radiusKm = orbitCenter(name)?.radiusKm;
@@ -70,8 +79,9 @@ function body(
   chain: number,
   radiusKm: number | null,
   primaryId: number | null = null,
+  ring: string | null = null,
 ): BodyRecord {
-  return { id, name, label, radiusKm, texture, attitude, appearance, placement, chain, primaryId };
+  return { id, name, label, radiusKm, texture, ring, attitude, appearance, placement, chain, primaryId };
 }
 
 function barycenter(id: number, name: string): BodyRecord {
@@ -88,8 +98,9 @@ function planet(
   placement: BodyPlacement,
   chain: number,
   primaryId: number | null = null,
+  ring: string | null = null,
 ): BodyRecord {
-  return body(id, name, label, appearance, attitude, texture, placement, chain, sized(name), primaryId);
+  return body(id, name, label, appearance, attitude, texture, placement, chain, sized(name), primaryId, ring);
 }
 
 /**
@@ -110,15 +121,15 @@ export const BODIES: readonly BodyRecord[] = [
   barycenter(8, "NEPTUNE BARYCENTER"),
   barycenter(9, "PLUTO BARYCENTER"),
   planet(10, "SUN", "Sun", "sun", "none", null, "snapshot", 10),
-  planet(199, "MERCURY", "Mercury", "sphere", "none", null, "snapshot", 199),
-  planet(299, "VENUS", "Venus", "sphere", "none", null, "snapshot", 299),
+  planet(199, "MERCURY", "Mercury", "sphere", "none", MERCURY_COLOR, "snapshot", 199),
+  planet(299, "VENUS", "Venus", "sphere", "none", VENUS_COLOR, "snapshot", 299),
   planet(399, "EARTH", "Earth", "earth", "earth", EARTH_DAY, "snapshot", 399),
   planet(301, "MOON", "Moon", "moon", "moon", MOON_COLOR, "snapshot", 301, 399),
-  planet(499, "MARS", "Mars", "sphere", "none", null, "barycenter-offset", 4),
-  planet(599, "JUPITER", "Jupiter", "jupiter", "none", JUPITER_COLOR, "barycenter-offset", 5),
-  planet(699, "SATURN", "Saturn", "sphere", "none", null, "barycenter-offset", 6),
-  planet(799, "URANUS", "Uranus", "sphere", "none", null, "barycenter-offset", 7),
-  planet(899, "NEPTUNE", "Neptune", "sphere", "none", null, "barycenter-offset", 8),
+  planet(499, "MARS", "Mars", "sphere", "none", MARS_COLOR, "barycenter-offset", 4),
+  planet(599, "JUPITER", "Jupiter", "sphere", "none", JUPITER_COLOR, "barycenter-offset", 5),
+  planet(699, "SATURN", "Saturn", "sphere", "none", SATURN_COLOR, "barycenter-offset", 6, null, SATURN_RING),
+  planet(799, "URANUS", "Uranus", "sphere", "none", URANUS_COLOR, "barycenter-offset", 7),
+  planet(899, "NEPTUNE", "Neptune", "sphere", "none", NEPTUNE_COLOR, "barycenter-offset", 8),
   planet(999, "PLUTO", "Pluto", "sphere", "none", null, "barycenter-offset", 9),
   ...CATALOG_MOONS.map((moon) =>
     body(moon.id, moon.label.toUpperCase(), moon.label, "sphere", "none", null, "satellite", moon.chain, moonRadiusKm(moon.id), moon.planetId),

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject, RefObject } from "react";
 import * as THREE from "three";
 import type { CameraMode } from "./camera";
-import type { CraftPose } from "./craftPose";
+import type { CameraSubject } from "./focus";
 
 type Scratch = {
   pos: THREE.Vector3;
@@ -27,7 +27,7 @@ const DRAG_PX = 6;
 const SURFACE_CLEARANCE_KM = 25;
 const obstacleOffset = new THREE.Vector3();
 
-export type SphereObstacle = { position: THREE.Vector3; radiusKm: number };
+export type SphereObstacle = { id: number; position: THREE.Vector3; radiusKm: number };
 
 function stayOutsideBody(camera: THREE.Camera, look: THREE.Vector3 | null, bodyRadiusKm: number) {
   pushOutside(camera, look, obstacleOffset.copy(camera.position), bodyRadiusKm);
@@ -58,7 +58,8 @@ function stayOutsideObstacles(camera: THREE.Camera, look: THREE.Vector3 | null, 
   }
 }
 
-function followDistance(rangeKm: number, bodyRadiusKm: number): number {
+function followDistance(rangeKm: number, bodyRadiusKm: number, onBody: boolean): number {
+  if (onBody) return bodyRadiusKm > 0 ? Math.max(bodyRadiusKm * 3.2, 40) : 80;
   const floor = bodyRadiusKm > 1000 ? 420 : 8;
   const cap = bodyRadiusKm > 1000 ? 8000 : 400;
   const altitude = Math.max(rangeKm - bodyRadiusKm, bodyRadiusKm > 0 ? 180 : 1);
@@ -75,7 +76,7 @@ function flightFrame(bag: Scratch) {
   bag.camUp.crossVectors(bag.right, bag.forward).normalize();
 }
 
-/** Keep the camera's offset from its target while the target moves to the spacecraft. */
+/** Keep the camera's offset from its target while the target moves. */
 function carry(camera: THREE.Camera, target: THREE.Vector3, next: THREE.Vector3, scratch: THREE.Vector3, up: THREE.Vector3) {
   scratch.copy(camera.position).sub(target);
   target.copy(next);
@@ -84,19 +85,19 @@ function carry(camera: THREE.Camera, target: THREE.Vector3, next: THREE.Vector3,
   camera.lookAt(next);
 }
 
-function seedFollow(bag: Scratch, camera: THREE.Camera, target: THREE.Vector3, bodyRadiusKm: number) {
+function seedFollow(bag: Scratch, camera: THREE.Camera, target: THREE.Vector3, bodyRadiusKm: number, onBody: boolean) {
   flightFrame(bag);
-  const dist = followDistance(bag.pos.length(), bodyRadiusKm);
+  const dist = followDistance(bag.pos.length(), bodyRadiusKm, onBody);
   camera.up.copy(bag.worldUp);
   target.copy(bag.pos);
   camera.position.copy(bag.pos).addScaledVector(bag.forward, -dist).addScaledVector(bag.camUp, dist * 0.42);
   camera.lookAt(bag.pos);
 }
 
-function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject<boolean>, zoom: number, target: THREE.Vector3, bodyRadiusKm: number) {
+function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject<boolean>, zoom: number, target: THREE.Vector3, bodyRadiusKm: number, onBody: boolean) {
   if (!anchored.current) {
     bag.anchor.copy(camera.position);
-    const min = followDistance(bag.pos.length(), bodyRadiusKm) * 1.6;
+    const min = followDistance(bag.pos.length(), bodyRadiusKm, onBody) * 1.6;
     if (bag.anchor.distanceTo(bag.pos) < min) {
       bag.forward.copy(bag.anchor).sub(bag.pos);
       if (bag.forward.lengthSq() < 1e-6) bag.forward.set(1, 0.45, 1);
@@ -114,10 +115,10 @@ function placePov(bag: Scratch, camera: THREE.Camera, anchored: MutableRefObject
   target.copy(bag.pos);
 }
 
-function placeCinematic(bag: Scratch, camera: THREE.Camera, elapsed: number, step: number, zoom: number, target: THREE.Vector3, bodyRadiusKm: number) {
+function placeCinematic(bag: Scratch, camera: THREE.Camera, elapsed: number, step: number, zoom: number, target: THREE.Vector3, bodyRadiusKm: number, onBody: boolean) {
   flightFrame(bag);
   camera.up.copy(bag.camUp);
-  const dist = followDistance(bag.pos.length(), bodyRadiusKm);
+  const dist = followDistance(bag.pos.length(), bodyRadiusKm, onBody);
   const radius = dist * (1.35 + 0.28 * Math.sin(elapsed * 0.13));
   const angle = elapsed * 0.18;
   const lift = 0.22 + 0.38 * (0.5 + 0.5 * Math.sin(elapsed * 0.07));
@@ -142,14 +143,15 @@ function adoptZoom(camera: THREE.Camera, pivot: THREE.Vector3, zoom: MutableRefO
 }
 
 export function CameraDirector({
-  pose,
+  subject,
   mode,
   bodyRadiusKm,
   obstacles,
   onCameraMode,
   exporting,
 }: {
-  pose: RefObject<CraftPose | null>;
+  /** The clicked body, or the spacecraft. Overview does not read it. */
+  subject: RefObject<CameraSubject>;
   mode: CameraMode;
   bodyRadiusKm: number;
   /** Neighbor bodies. The origin body is handled with `bodyRadiusKm`. */
@@ -164,6 +166,8 @@ export function CameraDirector({
   const anchored = useRef(false);
   const followReady = useRef(false);
   const keepView = useRef(false);
+  const seenKey = useRef("");
+  const snap = useRef(false);
   const zoom = useRef(1);
   const applied = useRef(0);
   const bag = useMemo<Scratch>(() => ({
@@ -222,11 +226,21 @@ export function CameraDirector({
     }
     const orbit = controls;
     const look = orbit?.target ?? null;
-    if (mode !== "overview" && mode !== "system") {
-      const sample = pose.current;
+    const sample = subject.current;
+    if (sample?.ok && sample.key !== seenKey.current) {
+      seenKey.current = sample.key;
+      followReady.current = false;
+      anchored.current = false;
+      keepView.current = false;
+      snap.current = true;
+      zoom.current = 1;
+      applied.current = 0;
+    }
+    if (mode !== "overview") {
       if (sample?.ok && look) {
         bag.pos.copy(sample.pos);
         bag.vel.copy(sample.vel);
+        const radius = sample.body ? sample.radiusKm : bodyRadiusKm;
         if (keepView.current && mode !== "follow") {
           carry(camera, look, bag.pos, bag.desired, bag.worldUp);
         } else if (mode === "follow") {
@@ -235,7 +249,7 @@ export function CameraDirector({
               carry(camera, look, bag.pos, bag.desired, bag.worldUp);
               keepView.current = false;
             } else {
-              seedFollow(bag, camera, look, bodyRadiusKm);
+              seedFollow(bag, camera, look, radius, sample.body);
               orbit?.update?.();
             }
             followReady.current = true;
@@ -244,9 +258,10 @@ export function CameraDirector({
           }
         } else {
           adoptZoom(camera, look, zoom, applied);
-          const step = exporting?.current ? 1 : 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
-          if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look, bodyRadiusKm);
-          else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look, bodyRadiusKm);
+          const step = snap.current || exporting?.current ? 1 : 1 - Math.exp(-Math.min(dt, 0.1) * 1.6);
+          snap.current = false;
+          if (mode === "pov") placePov(bag, camera, anchored, zoom.current, look, radius, sample.body);
+          else placeCinematic(bag, camera, state.clock.elapsedTime, step, zoom.current, look, radius, sample.body);
         }
       }
     }

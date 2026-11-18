@@ -17,11 +17,24 @@ const snapshot = readFileSync("public/ephemeris/de440-earth-moon-sun.bsp");
 const kernels = loadOrder([snapshot.buffer.slice(snapshot.byteOffset, snapshot.byteOffset + snapshot.byteLength)]);
 
 describe("body catalog", () => {
-  it("gives every sized body one record and leaves textures empty except Earth, the Moon, and Jupiter", () => {
+  it("gives every sized body one record and maps the planets that have textures", () => {
     const textured = neighborsOf("SOLAR SYSTEM BARYCENTER")
       .filter((body) => body.texture)
       .map((body) => body.texture);
-    expect(textured).toEqual(["/textures/earth-day.jpg", "/textures/moon.jpg", "/textures/jupiter.jpg"]);
+    expect(textured).toEqual([
+      "/textures/mercury.jpg",
+      "/textures/venus.jpg",
+      "/textures/earth-day.jpg",
+      "/textures/moon.jpg",
+      "/textures/mars.jpg",
+      "/textures/jupiter.jpg",
+      "/textures/saturn.jpg",
+      "/textures/uranus.jpg",
+      "/textures/neptune.jpg",
+    ]);
+    expect(bodyByName("SATURN")?.ring).toBe("/textures/saturn-ring.png");
+    expect(bodyByName("PLUTO")?.texture).toBeNull();
+    expect(bodyByName("JUPITER")?.ring).toBeNull();
     expect(bodyByName("JUPITER")?.attitude).toBe("none");
     expect(bodyByName("MARS")?.placement).toBe("barycenter-offset");
     expect(bodyByName("MERCURY")?.placement).toBe("snapshot");

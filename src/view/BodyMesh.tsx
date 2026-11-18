@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { BodyRecord } from "../core/ephemeris/bodies";
-import { EarthBody, JupiterBody, LitBody, MoonBody, SunBody } from "./Globe";
+import { EarthBody, LitBody, MappedBody, MoonBody, SunBody } from "./Globe";
 import { projectedDiameterPx } from "./pixel";
 import type { SceneClock } from "./types";
 
@@ -137,7 +137,7 @@ function OriginMark() {
 /**
  * The sphere or origin mark for one catalog record.
  * The Sun stays its disk in either style. Every other body is the gray
- * sphere in minimal style. Earth, the Moon, and Jupiter keep their maps.
+ * sphere in minimal style. Realistic style uses a map when the record has one.
  */
 export function BodyMesh({
   record,
@@ -163,8 +163,17 @@ export function BodyMesh({
   else if (!realistic) body = <BodySphere radiusKm={radius} />;
   else if (record?.appearance === "earth") body = <EarthBody radiusKm={radius} clock={clock} clouds={clouds} />;
   else if (record?.appearance === "moon") body = <MoonBody radiusKm={radius} clock={clock} />;
-  else if (record?.appearance === "jupiter") body = <JupiterBody radiusKm={radius} clock={clock} />;
-  else body = <LitBody radiusKm={radius} clock={clock} bodyId={record?.id} />;
+  else if (record?.texture) {
+    body = (
+      <MappedBody
+        radiusKm={radius}
+        clock={clock}
+        bodyId={record.id}
+        mapUrl={record.texture}
+        ringUrl={record.ring}
+      />
+    );
+  } else body = <LitBody radiusKm={radius} clock={clock} bodyId={record?.id} />;
   return (
     <MinimumPixel radiusKm={radius} keepBody={sun}>
       {body}

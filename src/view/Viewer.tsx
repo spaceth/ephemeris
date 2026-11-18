@@ -31,7 +31,8 @@ import { DEFAULT_LABELS } from "./Visualization";
 import { DEFAULT_ORBITS, SOLAR_ORBITS } from "./orbitTrack";
 import type { OrbitLineId, OrbitToggles } from "./orbitTrack";
 import type { LabelKind, LabelToggles, RenderStyle } from "./Visualization";
-import type { CameraMode } from "./camera";
+import type { CameraFocus, CameraMode } from "./camera";
+import { defaultFocus, focusFromLabel } from "./camera";
 import { trajectoryRadius } from "./sceneFit";
 import { SOLAR_FILE, SOLAR_OVERVIEW_KM, solarSeconds } from "./solar";
 import type { ViewGate } from "./useViewGate";
@@ -80,6 +81,14 @@ export function Viewer({
   const stars = renderStyle === "realistic" ? realisticStars : minimalStars;
   const [panelHeight, setPanelHeight] = useState(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("overview");
+  const [focus, setFocus] = useState<CameraFocus>({ kind: "craft" });
+  useEffect(() => {
+    setFocus(defaultFocus(Boolean(file)));
+  }, [file, solarMode]);
+  const selectFocus = (next: CameraFocus) => {
+    setFocus(next);
+    setCameraMode((mode) => (mode === "overview" ? "follow" : mode));
+  };
   const centerLabelEl = useRef<HTMLSpanElement>(null);
   const objectLabelEl = useRef<HTMLSpanElement>(null);
   const constellationNames = useRef<HTMLDivElement>(null);
@@ -243,7 +252,16 @@ export function Viewer({
 
   return (
     <>
-      <div className={viewing ? "stage-wrap tool-enter" : "stage-wrap is-held"}>
+      <div
+        className={viewing ? "stage-wrap tool-enter" : "stage-wrap is-held"}
+        onClick={(event) => {
+          if (!(event.target instanceof Element)) return;
+          const label = event.target.closest(".scene-label");
+          if (!label || label.classList.contains("constellation-name")) return;
+          const next = focusFromLabel(label.getAttribute("data-focus"), label.getAttribute("data-body-id"));
+          if (next) selectFocus(next);
+        }}
+      >
         {session.webgl ? (
           <Suspense fallback={null}>
             <OrbitView
@@ -268,6 +286,8 @@ export function Viewer({
               resetToken={session.resetToken}
               cameraMode={cameraMode}
               onCameraMode={setCameraMode}
+              focus={focus}
+              onFocus={selectFocus}
               neighborLabelEls={neighborLabelEls}
               flareTune={flareTuneRef}
               capture={captureRef}
@@ -278,10 +298,10 @@ export function Viewer({
           <p className="banner">WebGL is unavailable. Metadata still runs.</p>
         )}
         <div ref={constellationNames} className="constellation-names" />
-        <span ref={centerLabelEl} className="scene-label">
+        <span ref={centerLabelEl} className="scene-label" data-focus="center">
           {solarMode ? "Sun" : shown?.centerName ?? ""}
         </span>
-        <span ref={objectLabelEl} className="scene-label">
+        <span ref={objectLabelEl} className="scene-label" data-focus="craft">
           {solarMode ? "" : shown?.objectName ?? ""}
         </span>
         {neighborLabelEls.map((slot, index) => (
@@ -330,6 +350,7 @@ export function Viewer({
           onSpeed={session.setSpeed}
           onReset={() => {
             setCameraMode("overview");
+            setFocus(defaultFocus(Boolean(file)));
             session.resetView();
           }}
           onLive={session.goLive}

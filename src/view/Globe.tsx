@@ -17,12 +17,34 @@ const EARTH_DAY = "/textures/earth-day.jpg";
 const EARTH_CLOUD = "/textures/earth-cloud-day.jpg";
 const EARTH_NIGHT = "/textures/earth-night.jpg";
 const MOON_COLOR = "/textures/moon.jpg";
+const MERCURY_COLOR = "/textures/mercury.jpg";
+const VENUS_COLOR = "/textures/venus.jpg";
+const MARS_COLOR = "/textures/mars.jpg";
 const JUPITER_COLOR = "/textures/jupiter.jpg";
+const SATURN_COLOR = "/textures/saturn.jpg";
+const SATURN_RING = "/textures/saturn-ring.png";
+const URANUS_COLOR = "/textures/uranus.jpg";
+const NEPTUNE_COLOR = "/textures/neptune.jpg";
 useTexture.preload(EARTH_DAY);
 useTexture.preload(EARTH_CLOUD);
 useTexture.preload(EARTH_NIGHT);
 useTexture.preload(MOON_COLOR);
+useTexture.preload(MERCURY_COLOR);
+useTexture.preload(VENUS_COLOR);
+useTexture.preload(MARS_COLOR);
 useTexture.preload(JUPITER_COLOR);
+useTexture.preload(SATURN_COLOR);
+useTexture.preload(SATURN_RING);
+useTexture.preload(URANUS_COLOR);
+useTexture.preload(NEPTUNE_COLOR);
+
+/**
+ * `saturn-ring.png` is a radial strip: left is inner, right is outer.
+ * These radii, in planet radii, put the Cassini division on the dark gap
+ * and the outer A ring near 2.27 radii.
+ */
+const RING_INNER = 1.19;
+const RING_OUTER = 2.338;
 
 /** Atmosphere shell. Wide enough to fade, close enough to stay on the limb. */
 const AIR_SCALE = 1.045;
@@ -104,6 +126,28 @@ void main() {
   float rim = pow(1.0 - clamp(dot(n, viewDir), 0.0, 1.0), 1.7);
   color += vec3(0.2, 0.45, 1.0) * rim * 0.28 * (0.4 + 0.6 * clamp(mu, 0.0, 1.0));
   gl_FragColor = vec4(color, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <logdepthbuf_fragment>
+}
+`;
+
+const RING_FRAG = /* glsl */ `
+#include <logdepthbuf_pars_fragment>
+uniform sampler2D map;
+uniform vec3 sunDirection;
+varying vec2 vUv;
+varying vec3 vNormalW;
+void main() {
+  vec4 texel = texture2D(map, vUv);
+  if (texel.a < 0.02) discard;
+  vec3 albedo = sRGBTransferEOTF(vec4(texel.rgb, 1.0)).rgb;
+  float mu = abs(dot(normalize(vNormalW), normalize(sunDirection)));
+  float lit = clamp(mu, 0.0, 1.0);
+  // The mesh pole stays upright, so the Sun sits near this plane and a
+  // Lambert disk would go black. The floor keeps the ring bands visible.
+  vec3 color = albedo * (0.62 + 0.38 * lit);
+  gl_FragColor = vec4(color, texel.a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <logdepthbuf_fragment>
@@ -247,18 +291,89 @@ export function MoonBody(props: BodyProps) {
 }
 
 /**
- * Equirectangular Jupiter map from `public/textures/jupiter.jpg`. North on the image is mesh +Y.
- * No Jupiter attitude series is applied, so that axis stays scene up, the EME2000 pole,
- * and the map does not rotate. The Sun direction is the snapshot chain through
- * the Jupiter barycenter when that kernel is loaded.
+ * Equirectangular color map. North on the image is mesh +Y.
+ * No pole or prime-meridian series is applied, so that axis stays scene up,
+ * the EME2000 pole, and the map does not rotate.
  */
-export function JupiterBody(props: BodyProps) {
-  const map = useTexture(JUPITER_COLOR);
+export function MappedBody({
+  radiusKm,
+  clock,
+  bodyId,
+  mapUrl,
+  ringUrl,
+}: BodyProps & { mapUrl: string; ringUrl?: string | null }) {
+  const map = useTexture(mapUrl);
   const gl = useThree((state) => state.gl);
   useLayoutEffect(() => {
     configureMap(map, gl);
   }, [gl, map]);
-  return <LitSphere {...props} bodyId={props.bodyId ?? 599} map={map} axes={null} textured />;
+  return (
+    <>
+      <LitSphere radiusKm={radiusKm} clock={clock} bodyId={bodyId} map={map} axes={null} textured />
+      {ringUrl ? <RingDisc radiusKm={radiusKm} clock={clock} bodyId={bodyId} mapUrl={ringUrl} /> : null}
+    </>
+  );
+}
+
+function ringGeometry(radiusKm: number): THREE.BufferGeometry {
+  const inner = radiusKm * RING_INNER;
+  const outer = radiusKm * RING_OUTER;
+  const geometry = new THREE.RingGeometry(inner, outer, 192, 1);
+  const position = geometry.attributes.position;
+  const uv = geometry.attributes.uv;
+  for (let index = 0; index < position.count; index += 1) {
+    const radial = Math.hypot(position.getX(index), position.getY(index));
+    uv.setXY(index, (radial - inner) / (outer - inner), 0.5);
+  }
+  uv.needsUpdate = true;
+  return geometry;
+}
+
+/** Saturn's ring strip, in the mesh equator. The left edge of the image is the inner rim. */
+function RingDisc({ radiusKm, clock, bodyId, mapUrl }: BodyProps & { mapUrl: string }) {
+  const map = useTexture(mapUrl);
+  const gl = useThree((state) => state.gl);
+  const geometry = useMemo(() => ringGeometry(radiusKm), [radiusKm]);
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          map: { value: map },
+          sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+        },
+        vertexShader: VERT,
+        fragmentShader: RING_FRAG,
+        transparent: true,
+        depthWrite: true,
+        side: THREE.DoubleSide,
+      }),
+    [map],
+  );
+  useLayoutEffect(() => {
+    configureMap(map, gl);
+  }, [gl, map]);
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(() => {
+    const origin = clock.current.file?.origin ?? null;
+    const sun = material.uniforms.sunDirection.value as THREE.Vector3;
+    if (!origin) {
+      sun.set(1, 0, 0);
+      return;
+    }
+    const { jdTt } = earthEpochs(origin, clock.current.t);
+    const placed = bodyId == null ? null : ephemerisSunScene(bodyId, origin, clock.current.t);
+    const direction = placed ?? sunScene(jdTt);
+    sun.set(direction[0], direction[1], direction[2]);
+  });
+
+  return <mesh geometry={geometry} material={material} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1} />;
 }
 
 function configureMap(map: THREE.Texture, gl: THREE.WebGLRenderer) {

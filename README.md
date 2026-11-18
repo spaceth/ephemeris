@@ -19,7 +19,7 @@ npm run dev
 | `src/session.ts` | The open file, the clock, and the drawn arcs. |
 | `public/sample/` | Example trajectories the welcome screen can open. EM-2, ISS, DART, CE7, LRO, and Juno. |
 | `public/ephemeris/` | The planetary snapshot the page loads, plus a JSON manifest that names its source. |
-| `public/textures/` | Earth, Moon, and Jupiter maps. |
+| `public/textures/` | Planet and Moon maps, the Saturn ring, and the lens-dirt image. |
 | `kernels/sources.json` | Filename, NAIF URL, SHA-256, local path, and role for each kernel. |
 | `kernels/pck00011.tpc` | The planetary-constants text kernel the page imports, under its NAIF name. |
 | `data/kernels/` | The full `de440.bsp` and `gm_de440.tpc`. Gitignored. Used to rebuild the snapshot and the CSPICE fixtures. |
@@ -60,9 +60,10 @@ Each `BodyRecord` carries:
 | `name` | Canonical SANA center name. |
 | `label` | The name drawn on screen. |
 | `radiusKm` | Equatorial radius used for the sphere. Empty for a barycenter, a Lagrange point, and a small body, which stay an origin mark. |
-| `texture` | A map path, filled only for Earth, the Moon, and Jupiter. |
+| `texture` | A color-map path. Filled for Mercury through Neptune and the Moon. Pluto and the moons have none. |
+| `ring` | A radial ring strip. Filled only for Saturn. |
 | `attitude` | `earth`, `moon`, or `none`. Only Earth and the Moon rotate. |
-| `appearance` | Which mesh to use: Sun, Earth, Moon, Jupiter, or a plain sphere. |
+| `appearance` | Which mesh to use: Sun, Earth, Moon, or a plain sphere. A sphere with a map uses that map. |
 | `placement` | `snapshot` when the id is in the cut kernel, or `barycenter-offset` when the planet is drawn a short distance from its system barycenter. |
 | `chain` | The SPK target walked out to the solar-system barycenter. An offset planet walks its barycenter, then the offset is added. |
 
@@ -281,18 +282,20 @@ The Constellation label draws the IAU stick figures and the constellation names 
 
 ### Body maps
 
-Equirectangular maps of Earth and the Moon have the date line at the left and right edges and longitude 0° at the center. The mesh local +X is that prime meridian and local +Y is north, before the EME2000 rotation. Jupiter uses the same mesh placement. Its map is not tied to an IAU prime meridian.
+Equirectangular maps of Earth and the Moon have the date line at the left and right edges and longitude 0° at the center. The mesh local +X is that prime meridian and local +Y is north, before the EME2000 rotation. Mercury, Venus, Mars, Jupiter, Saturn, Uranus, and Neptune use that same mesh placement. Their maps are not tied to an IAU prime meridian, so the axis stays aligned with the EME2000 pole and the map does not rotate.
 
 | Map | File | What it is |
 | --- | --- | --- |
 | Earth day, night, clouds | `public/textures/earth-day.jpg`, `earth-night.jpg`, `earth-cloud-day.jpg` | Equirectangular maps already in the repository. Their image metadata does not name a public source, so this document does not assign one. |
 | Moon | `public/textures/moon.jpg` | NASA Scientific Visualization Studio CGI Moon Kit color map, a work of the United States Government, centered on 0° longitude. The crust rotation is the IAU series above. |
-| Jupiter | `public/textures/jupiter.jpg` | Equirectangular color map, 2048×1024. The image metadata does not name a public source, so this document does not assign one. The realistic view uses it whether Jupiter is the center or a neighbor. The top of the map is mesh +Y. No Jupiter pole or prime-meridian series is applied, so that axis stays aligned with the EME2000 pole and the map does not rotate. |
+| Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune | `public/textures/mercury.jpg`, `venus.jpg`, `mars.jpg`, `jupiter.jpg`, `saturn.jpg`, `uranus.jpg`, `neptune.jpg` | Equirectangular color maps, 2048×1024. Venus is the cloud deck. The realistic view uses each map whether that body is the center or a neighbor. The top of the map is mesh +Y. |
+| Saturn ring | `public/textures/saturn-ring.png` | Radial strip, 2048×125, left edge inner. Drawn in the mesh equator from 1.19 to 2.34 planet radii, so the Cassini division sits on the dark gap and the outer A ring lands near 2.27 radii. |
 | Sun | none | Untextured sphere of the PCK equatorial radius, 695,700 km. |
+| Pluto and the moons | none | Gray lit sphere in the realistic view. |
 | Minimal style | none | Gray sphere, `#3a3a3c`, for the Moon and the planets when the realistic maps are off. The Sun stays the Sun. |
 | Lens flare | shader in `src/view/SunFlare.tsx` | CC0 shader from ektogamat/R3F-Ultimate-Lens-Flare. In the realistic view it follows the Sun disk, at the origin or in orbit. Neighbor bodies occlude it. |
 
-Earth and the Moon are the bodies that spin. Jupiter has a map, and that map stays fixed to the pole.
+Earth and the Moon are the bodies that spin. The other mapped planets keep their maps fixed to the pole. Saturn's ring lies in that same equator.
 
 ## Technology and licenses
 

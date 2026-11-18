@@ -15,6 +15,7 @@ import { tdbFromTaiClock } from "../core/ephemeris/scales";
 import { lightingKernel } from "../core/ephemeris/sunLight";
 import { BodyMesh } from "./BodyMesh";
 import { CameraDirector } from "./CameraDirector";
+import { FocusClick, FocusSubject } from "./FocusRig";
 import { CaptureBridge } from "./CaptureBridge";
 import { Constellations } from "./Constellations";
 import type { CaptureHandle } from "./CaptureBridge";
@@ -25,7 +26,8 @@ import type { OrbitToggles } from "./orbitTrack";
 import { StarField } from "./Stars";
 import { SunLensFlare } from "./SunFlare";
 import type { FlareTune } from "./flareTune";
-import type { CameraMode } from "./camera";
+import type { CameraFocus, CameraMode } from "./camera";
+import type { CameraSubject } from "./focus";
 import type { LabelToggles } from "./Visualization";
 import { readCraft } from "./craftPose";
 import type { CraftPose } from "./craftPose";
@@ -80,6 +82,9 @@ type OrbitProps = {
   resetToken: number;
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
+  /** Body Follow, PoV, and Cinematic track. Overview frames the origin instead. */
+  focus: CameraFocus;
+  onFocus: (focus: CameraFocus) => void;
   /** Names for the snapshot neighbors. Unused slots stay hidden. */
   neighborLabelEls: RefObject<HTMLSpanElement | null>[];
   /** Live sun-flare overrides from the temporary panel. */
@@ -656,20 +661,16 @@ function LabelSettle() {
 
 function CameraRig({
   fit,
-  reach,
   resetToken,
   mode,
 }: {
   fit: number;
-  reach: RefObject<number>;
   resetToken: number;
   mode: CameraMode;
 }) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as { target?: THREE.Vector3; update?: () => void } | null;
-  const systemPlaced = useRef(false);
   useEffect(() => {
-    systemPlaced.current = false;
     if (mode !== "overview") return;
     const radius = Math.max(fit, 16);
     camera.up.set(0, 1, 0);
@@ -682,19 +683,6 @@ function CameraRig({
     controls?.target?.set(0, 0, 0);
     controls?.update?.();
   }, [camera, controls, fit, mode, resetToken]);
-  useFrame(() => {
-    if (mode !== "system" || systemPlaced.current || reach.current <= 0) return;
-    const radius = Math.max(reach.current, 16);
-    camera.up.set(0, 1, 0);
-    camera.position.set(radius * 0.2, radius * 0.55, radius * 1.45);
-    camera.near = 0.02;
-    camera.far = Math.max(radius * 8, 1e9);
-    camera.lookAt(0, 0, 0);
-    camera.updateProjectionMatrix();
-    controls?.target?.set(0, 0, 0);
-    controls?.update?.();
-    systemPlaced.current = true;
-  });
   return null;
 }
 
@@ -720,12 +708,22 @@ export function OrbitView({
   resetToken,
   cameraMode,
   onCameraMode,
+  focus,
+  onFocus,
   neighborLabelEls,
   flareTune,
   capture,
   capturing,
 }: OrbitProps) {
   const pose = useRef<CraftPose | null>(null);
+  const subject = useRef<CameraSubject>({
+    ok: false,
+    pos: new THREE.Vector3(),
+    vel: new THREE.Vector3(),
+    radiusKm: 0,
+    body: false,
+    key: "",
+  });
   const obstacles = useRef<SphereObstacle[]>([]);
   const reach = useRef(0);
   const exporting = useRef(false);
@@ -791,15 +789,28 @@ export function OrbitView({
       <OrbitControls
         makeDefault
         enabled={!capturing}
-        enablePan={!capturing && (cameraMode === "overview" || cameraMode === "system")}
+        enablePan={!capturing && cameraMode === "overview"}
         enableDamping={!capturing}
         dampingFactor={0.08}
-        minDistance={cameraMode !== "overview" && cameraMode !== "system" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
-        maxDistance={cameraMode === "system" || centerNaif(centerName) != null ? Math.max(1e9, fit * 4) : Math.max(fit, 16) * 30}
+        minDistance={cameraMode !== "overview" && (bodyRadiusKm ?? 0) > 1000 ? 40 : 0.15}
+        maxDistance={centerNaif(centerName) != null ? Math.max(1e9, fit * 4) : Math.max(fit, 16) * 30}
       />
-      <CameraRig fit={fit} reach={reach} resetToken={resetToken} mode={cameraMode} />
-      <CameraDirector
+      <CameraRig fit={fit} resetToken={resetToken} mode={cameraMode} />
+      <FocusSubject
+        focus={focus}
         pose={pose}
+        obstacles={obstacles}
+        centerRadiusKm={bodyRadiusKm ?? 0}
+        subject={subject}
+      />
+      <FocusClick
+        pose={pose}
+        obstacles={obstacles}
+        centerRadiusKm={bodyRadiusKm ?? 0}
+        onFocus={onFocus}
+      />
+      <CameraDirector
+        subject={subject}
         mode={cameraMode}
         bodyRadiusKm={bodyRadiusKm ?? 0}
         obstacles={obstacles}

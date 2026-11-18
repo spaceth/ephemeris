@@ -82,7 +82,7 @@ export function Neighbors({
   const neighbors = useMemo(() => defaultNeighbors(centerName), [centerName]);
   const groups = useRef<(THREE.Group | null)[]>([]);
   const slots = useMemo(
-    () => neighbors.map(() => ({ position: new THREE.Vector3(), radiusKm: 0 })),
+    () => neighbors.map((body) => ({ id: body.id, position: new THREE.Vector3(), radiusKm: body.radiusKm ?? 0 })),
     [neighbors],
   );
 
@@ -138,7 +138,11 @@ export function Neighbors({
       slot.radiusKm = body.radiusKm ?? 0;
       list?.push(slot);
       farthest = Math.max(farthest, Math.hypot(x, y, z) + (body.radiusKm ?? 0));
-      if (label) label.dataset.name = body.label;
+      if (label) {
+        label.dataset.name = body.label;
+        label.dataset.focus = "body";
+        label.dataset.bodyId = String(body.id);
+      }
       const kind = bodyLabelKind(body.id);
       placeNeighborLabel(label, group.position, body.radiusKm ?? 0, kind != null && labels[kind], camera, size, gl.getPixelRatio(), body.id);
     });
