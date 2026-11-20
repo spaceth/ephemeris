@@ -8,6 +8,8 @@ export { orbitCenter, centerKey, ORBIT_CENTERS } from "./centers";
 export type { OrbitCenter } from "./centers";
 export { radecEme2000 } from "./radec";
 export { gmst, earthEmeFromItrf, earthScene, moonEmeFromBody, moonScene, sunEme2000, sunScene, earthEpochs } from "./globe";
+export { planetPose } from "./ephemeris/rotation";
+export type { IauPose } from "./ephemeris/rotation";
 export { starColor, starDirection, starPointSize, starScene } from "./stars";
 export type { Mat3 } from "./globe";
 export { LEAP_SOURCE } from "./time";

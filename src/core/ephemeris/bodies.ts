@@ -13,7 +13,8 @@ import { parsePckRadii } from "../pck";
 import { CATALOG_MOONS } from "./barycenter";
 import type { NaifId } from "./state";
 
-export type BodyAttitude = "earth" | "moon" | "none";
+/** `earth` and `moon` keep their own orientation code. `iau` is the PCK pole and prime meridian. */
+export type BodyAttitude = "earth" | "moon" | "iau" | "none";
 
 /** Which mesh reads this record. Minimal style still draws a gray sphere, except the Sun. */
 export type BodyAppearance = "sun" | "earth" | "moon" | "sphere";
@@ -121,16 +122,16 @@ export const BODIES: readonly BodyRecord[] = [
   barycenter(8, "NEPTUNE BARYCENTER"),
   barycenter(9, "PLUTO BARYCENTER"),
   planet(10, "SUN", "Sun", "sun", "none", null, "snapshot", 10),
-  planet(199, "MERCURY", "Mercury", "sphere", "none", MERCURY_COLOR, "snapshot", 199),
-  planet(299, "VENUS", "Venus", "sphere", "none", VENUS_COLOR, "snapshot", 299),
+  planet(199, "MERCURY", "Mercury", "sphere", "iau", MERCURY_COLOR, "snapshot", 199),
+  planet(299, "VENUS", "Venus", "sphere", "iau", VENUS_COLOR, "snapshot", 299),
   planet(399, "EARTH", "Earth", "earth", "earth", EARTH_DAY, "snapshot", 399),
   planet(301, "MOON", "Moon", "moon", "moon", MOON_COLOR, "snapshot", 301, 399),
-  planet(499, "MARS", "Mars", "sphere", "none", MARS_COLOR, "barycenter-offset", 4),
-  planet(599, "JUPITER", "Jupiter", "sphere", "none", JUPITER_COLOR, "barycenter-offset", 5),
-  planet(699, "SATURN", "Saturn", "sphere", "none", SATURN_COLOR, "barycenter-offset", 6, null, SATURN_RING),
-  planet(799, "URANUS", "Uranus", "sphere", "none", URANUS_COLOR, "barycenter-offset", 7),
-  planet(899, "NEPTUNE", "Neptune", "sphere", "none", NEPTUNE_COLOR, "barycenter-offset", 8),
-  planet(999, "PLUTO", "Pluto", "sphere", "none", null, "barycenter-offset", 9),
+  planet(499, "MARS", "Mars", "sphere", "iau", MARS_COLOR, "barycenter-offset", 4),
+  planet(599, "JUPITER", "Jupiter", "sphere", "iau", JUPITER_COLOR, "barycenter-offset", 5),
+  planet(699, "SATURN", "Saturn", "sphere", "iau", SATURN_COLOR, "barycenter-offset", 6, null, SATURN_RING),
+  planet(799, "URANUS", "Uranus", "sphere", "iau", URANUS_COLOR, "barycenter-offset", 7),
+  planet(899, "NEPTUNE", "Neptune", "sphere", "iau", NEPTUNE_COLOR, "barycenter-offset", 8),
+  planet(999, "PLUTO", "Pluto", "sphere", "iau", null, "barycenter-offset", 9),
   ...CATALOG_MOONS.map((moon) =>
     body(moon.id, moon.label.toUpperCase(), moon.label, "sphere", "none", null, "satellite", moon.chain, moonRadiusKm(moon.id), moon.planetId),
   ),

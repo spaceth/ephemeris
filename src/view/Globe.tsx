@@ -144,8 +144,8 @@ void main() {
   vec3 albedo = sRGBTransferEOTF(vec4(texel.rgb, 1.0)).rgb;
   float mu = abs(dot(normalize(vNormalW), normalize(sunDirection)));
   float lit = clamp(mu, 0.0, 1.0);
-  // The mesh pole stays upright, so the Sun sits near this plane and a
-  // Lambert disk would go black. The floor keeps the ring bands visible.
+  // A Lambert disk goes black when the Sun lies in the ring plane.
+  // The floor keeps the bands visible through that season.
   vec3 color = albedo * (0.62 + 0.38 * lit);
   gl_FragColor = vec4(color, texel.a);
   #include <tonemapping_fragment>
@@ -291,9 +291,9 @@ export function MoonBody(props: BodyProps) {
 }
 
 /**
- * Equirectangular color map. North on the image is mesh +Y.
- * No pole or prime-meridian series is applied, so that axis stays scene up,
- * the EME2000 pole, and the map does not rotate.
+ * Equirectangular color map. North on the image is mesh +Y and longitude 0°
+ * is mesh +X. This mesh stays in those local axes. A planet with IAU
+ * orientation is turned by the parent group, which also carries Saturn's ring.
  */
 export function MappedBody({
   radiusKm,

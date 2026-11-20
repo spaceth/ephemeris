@@ -14,7 +14,7 @@ npm run dev
 | Path | What it holds |
 | --- | --- |
 | `src/core/` | Time, frames, the orbit-center list, OEM parsing, and OEM interpolation. |
-| `src/core/ephemeris/` | SPK reading, the body catalog, `place`, the planet-from-barycenter offset, Earth and Moon orientation. |
+| `src/core/ephemeris/` | SPK reading, the body catalog, `place`, the planet-from-barycenter offset, Earth and Moon orientation, and the IAU spin of the other planets. |
 | `src/view/` | The scene, body meshes, labels, camera, and the panels. |
 | `src/session.ts` | The open file, the clock, and the drawn arcs. |
 | `public/sample/` | Example trajectories the welcome screen can open. EM-2, ISS, DART, CE7, LRO, and Juno. |
@@ -62,7 +62,7 @@ Each `BodyRecord` carries:
 | `radiusKm` | Equatorial radius used for the sphere. Empty for a barycenter, a Lagrange point, and a small body, which stay an origin mark. |
 | `texture` | A color-map path. Filled for Mercury through Neptune and the Moon. Pluto and the moons have none. |
 | `ring` | A radial ring strip. Filled only for Saturn. |
-| `attitude` | `earth`, `moon`, or `none`. Only Earth and the Moon rotate. |
+| `attitude` | `earth`, `moon`, `iau`, or `none`. `earth` and `moon` keep their own orientation. `iau` is the PCK pole and prime meridian. |
 | `appearance` | Which mesh to use: Sun, Earth, Moon, or a plain sphere. A sphere with a map uses that map. |
 | `placement` | `snapshot` when the id is in the cut kernel, or `barycenter-offset` when the planet is drawn a short distance from its system barycenter. |
 | `chain` | The SPK target walked out to the solar-system barycenter. An offset planet walks its barycenter, then the offset is added. |
@@ -199,6 +199,16 @@ No polar-motion bulletin is loaded, so the pole offset is omitted and reported a
 
 The Moon uses the IAU working-group pole, prime meridian, and libration arguments. Body-fixed +X is the prime meridian and +Z is the north pole, and the matrix sends that into EME2000. This is the cartographic series. It is not read from the PCK. The lunar radius is the separate PCK value in the table above.
 
+### Other planets
+
+Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, and Pluto use the IAU body-fixed frame in `kernels/pck00011.tpc`. The evaluator is `planetPose` in `src/core/ephemeris/rotation.ts`. Earth (399) and the Moon (301) are not in that list, and the Sun is not either. Their meshes are unchanged.
+
+The kernel stores three polynomials. Right ascension and declination of the north pole are degrees, degrees per Julian century, and degrees per century squared, with the century counted in TDB from J2000. The prime meridian `W` uses the same shape in days. Where the body has nutation terms, right ascension and `W` add sines of the system phase angles, and declination adds cosines. Those angles belong to the planetary-system barycenter, `floor(id / 100)`, so Jupiter reads `BODY5_NUT_PREC_ANGLES`. The default angle polynomial is linear in centuries. Mars sets `BODY4_MAX_PHASE_DEGREE` to 2, so each Mars angle is a triple. A later `\begindata` assignment replaces an earlier one. The commented predecessors in the kernel are not read.
+
+The matrix that takes a J2000 vector into the body frame is `[W]₃ [π/2 − δ]₁ [π/2 + α]₃`, the same product SPICE uses for a text PCK. Its transpose takes the body frame out to the PCK J2000 axes: +X is the prime meridian, +Y is east, and +Z is north. The PCK calls that inertial frame J2000. It is the ICRF. The EME2000 frame bias is not applied. It is smaller than the series.
+
+The mesh is the same equirectangular placement as Earth and the Moon. Local +X is longitude 0° and local +Y is north, which is already the center of the texture, so no longitude offset is added. That scene matrix is what `Quaternion.setFromRotationMatrix` consumes. The quaternion is written on a child group whose position and scale stay at the identity. The orbit stays on the ancestor. Saturn’s ring is a child of the same group, so the ring plane is Saturn’s equator. A negative `W` rate, Venus and Uranus, is retrograde about the IAU north pole. Pluto’s pole is south of the celestial equator and its `W` rate is positive. The angle is computed from the epoch, not accumulated, so playback forward and backward meets the same meridian. The clock instant is the same TDB-equals-TT stand-in the snapshot uses.
+
 Until the snapshot has loaded, the terminator uses a low-precision geocentric Sun direction, good to about 0.01°. After that, the Sun direction is the geometric DE440 state of the Sun relative to the lit body. For Jupiter that chain runs through the Jupiter barycenter and then the circle-rule offset. For the Moon the direction is geocentric, so the terminator differs from a Moon-centered Sun by a fraction of a degree.
 
 A spacecraft body frame is reserved and unused. `attitudeAt` returns null. The marker is a screen-space point. Velocity supplied to the follow camera is a camera offset.
@@ -266,7 +276,7 @@ Everything the user opens is local. The page reads an `ArrayBuffer` or decodes O
 4. **Advance a TAI clock.** Playback time is TAI seconds from the file origin. Display epochs are formatted from the split Julian Date.
 5. **Evaluate.** OEM playback calls the OEM interpolator, then `sourceToEme2000` when the segment is GCRF or ICRF. SPK playback converts the clock instant to ephemeris time, selects the window, evaluates, converts to meters once, and applies the frame bias once when EME2000 was requested.
 6. **Place the scene.** Arc vertices stay center-relative EME2000 meters. At draw time the segment center is placed relative to the viewing center, the vertex is added, and `toScene` runs once. Neighbors use the same `place` step. A failure hides that body or arc for the frame and is recorded. The group is created hidden so a body does not appear at the origin while the kernel loads.
-7. **Light and orient.** The Sun direction comes from the snapshot when the lit body is not the Sun. Otherwise the analytic direction is used. Earth orientation uses the file UTC as UT1. The Moon uses its libration series on TT.
+7. **Light and orient.** The Sun direction comes from the snapshot when the lit body is not the Sun. Otherwise the analytic direction is used. Earth orientation uses the file UTC as UT1. The Moon uses its libration series on TT. The other planets evaluate the PCK pole and prime meridian at the same TDB stand-in used for the snapshot.
 
 Float64 is the working type for states, coefficients, and time. The scene then scales meters to kilometers. At solar-system distances that floating-point step is on the order of 10 km. Near Earth it is a fraction of a meter. Both are acceptable for drawing.
 
@@ -282,7 +292,7 @@ The Constellation label draws the IAU stick figures and the constellation names 
 
 ### Body maps
 
-Equirectangular maps of Earth and the Moon have the date line at the left and right edges and longitude 0° at the center. The mesh local +X is that prime meridian and local +Y is north, before the EME2000 rotation. Mercury, Venus, Mars, Jupiter, Saturn, Uranus, and Neptune use that same mesh placement. Their maps are not tied to an IAU prime meridian, so the axis stays aligned with the EME2000 pole and the map does not rotate.
+Equirectangular maps of Earth and the Moon have the date line at the left and right edges and longitude 0° at the center. The mesh local +X is that prime meridian and local +Y is north, before the orientation above is applied. Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, and the untextured Pluto sphere use that same mesh placement. Longitude 0° stays at the texture center.
 
 | Map | File | What it is |
 | --- | --- | --- |
@@ -295,7 +305,7 @@ Equirectangular maps of Earth and the Moon have the date line at the left and ri
 | Minimal style | none | Gray sphere, `#3a3a3c`, for the Moon and the planets when the realistic maps are off. The Sun stays the Sun. |
 | Lens flare | shader in `src/view/SunFlare.tsx` | CC0 shader from ektogamat/R3F-Ultimate-Lens-Flare. In the realistic view it follows the Sun disk, at the origin or in orbit. Neighbor bodies occlude it. |
 
-Earth and the Moon are the bodies that spin. The other mapped planets keep their maps fixed to the pole. Saturn's ring lies in that same equator.
+Earth and the Moon spin on their own models. The other planets spin on the PCK series under Other planets. Saturn’s ring lies in Saturn’s equator.
 
 ## Technology and licenses
 

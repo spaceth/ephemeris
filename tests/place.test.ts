@@ -35,7 +35,7 @@ describe("body catalog", () => {
     expect(bodyByName("SATURN")?.ring).toBe("/textures/saturn-ring.png");
     expect(bodyByName("PLUTO")?.texture).toBeNull();
     expect(bodyByName("JUPITER")?.ring).toBeNull();
-    expect(bodyByName("JUPITER")?.attitude).toBe("none");
+    expect(bodyByName("JUPITER")?.attitude).toBe("iau");
     expect(bodyByName("MARS")?.placement).toBe("barycenter-offset");
     expect(bodyByName("MERCURY")?.placement).toBe("snapshot");
     expect(bodyByName("EARTH")?.radiusKm).toBe(orbitCenter("EARTH")?.radiusKm);

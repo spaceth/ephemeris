@@ -2,12 +2,58 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
+import { planetPose, tdbFromTaiClock } from "../core";
 import type { BodyRecord } from "../core/ephemeris/bodies";
 import { EarthBody, LitBody, MappedBody, MoonBody, SunBody } from "./Globe";
 import { projectedDiameterPx } from "./pixel";
 import type { SceneClock } from "./types";
 
 const MARK = new Float32Array([0, 0, 0]);
+
+/**
+ * IAU spin for one planet. The quaternion is the scene matrix from the PCK
+ * pole and prime meridian. Position and scale stay at the identity so the
+ * orbit, which lives on an ancestor, is unchanged. Earth and the Moon do
+ * not use this group.
+ */
+function IauOrient({
+  bodyId,
+  clock,
+  children,
+}: {
+  bodyId: number;
+  clock: { current: SceneClock };
+  children: ReactNode;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const scratch = useMemo(() => new THREE.Matrix4(), []);
+  useFrame(() => {
+    const node = group.current;
+    if (!node) return;
+    node.position.set(0, 0, 0);
+    node.scale.set(1, 1, 1);
+    const origin = clock.current.file?.origin ?? null;
+    if (!origin) {
+      node.quaternion.identity();
+      return;
+    }
+    const seconds = tdbFromTaiClock(origin, clock.current.t).secondsPastJ2000;
+    const pose = planetPose(bodyId, seconds);
+    if (!pose) {
+      node.quaternion.identity();
+      return;
+    }
+    const rows = pose.scene;
+    scratch.set(
+      rows[0], rows[1], rows[2], 0,
+      rows[3], rows[4], rows[5], 0,
+      rows[6], rows[7], rows[8], 0,
+      0, 0, 0, 1,
+    );
+    node.quaternion.setFromRotationMatrix(scratch);
+  });
+  return <group ref={group}>{children}</group>;
+}
 
 function circleTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
@@ -174,6 +220,13 @@ export function BodyMesh({
       />
     );
   } else body = <LitBody radiusKm={radius} clock={clock} bodyId={record?.id} />;
+  if (record?.attitude === "iau") {
+    body = (
+      <IauOrient bodyId={record.id} clock={clock}>
+        {body}
+      </IauOrient>
+    );
+  }
   return (
     <MinimumPixel radiusKm={radius} keepBody={sun}>
       {body}
