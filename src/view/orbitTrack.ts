@@ -70,18 +70,20 @@ export type OrbitTrackSpec = {
   bodyId: number;
   anchorId: number;
   periodDays: number;
+  /** Fade this ring with the body's apparent size. Planets only, including Earth. */
+  fade?: boolean;
 };
 
 const PLANETS: readonly (OrbitTrackSpec & { id: OrbitLineId })[] = [
-  { id: "mercury", key: "mercury", bodyId: 199, anchorId: 10, periodDays: 87.969 },
-  { id: "venus", key: "venus", bodyId: 299, anchorId: 10, periodDays: 224.701 },
-  { id: "earth", key: "earth", bodyId: 399, anchorId: 10, periodDays: 365.256 },
-  { id: "mars", key: "mars", bodyId: 499, anchorId: 10, periodDays: 686.98 },
-  { id: "jupiter", key: "jupiter", bodyId: 599, anchorId: 10, periodDays: 4332.589 },
-  { id: "saturn", key: "saturn", bodyId: 699, anchorId: 10, periodDays: 10759.22 },
-  { id: "uranus", key: "uranus", bodyId: 799, anchorId: 10, periodDays: 30685.4 },
-  { id: "neptune", key: "neptune", bodyId: 899, anchorId: 10, periodDays: 60189 },
-  { id: "pluto", key: "pluto", bodyId: 999, anchorId: 10, periodDays: 90560 },
+  { id: "mercury", key: "mercury", bodyId: 199, anchorId: 10, periodDays: 87.969, fade: true },
+  { id: "venus", key: "venus", bodyId: 299, anchorId: 10, periodDays: 224.701, fade: true },
+  { id: "earth", key: "earth", bodyId: 399, anchorId: 10, periodDays: 365.256, fade: true },
+  { id: "mars", key: "mars", bodyId: 499, anchorId: 10, periodDays: 686.98, fade: true },
+  { id: "jupiter", key: "jupiter", bodyId: 599, anchorId: 10, periodDays: 4332.589, fade: true },
+  { id: "saturn", key: "saturn", bodyId: 699, anchorId: 10, periodDays: 10759.22, fade: true },
+  { id: "uranus", key: "uranus", bodyId: 799, anchorId: 10, periodDays: 30685.4, fade: true },
+  { id: "neptune", key: "neptune", bodyId: 899, anchorId: 10, periodDays: 60189, fade: true },
+  { id: "pluto", key: "pluto", bodyId: 999, anchorId: 10, periodDays: 90560, fade: true },
 ];
 
 /** Tracks for the pills that are on. Planet moons are one pill and many rings. */

@@ -47,10 +47,29 @@ describe("orbit lines", () => {
     expect(orbitTrackSpecs(DEFAULT_ORBITS)).toEqual([]);
     const earth = orbitTrackSpecs({ ...DEFAULT_ORBITS, earth: true });
     expect(earth.map((track) => track.bodyId)).toEqual([399]);
+    expect(earth.every((track) => track.fade)).toBe(true);
     const moons = orbitTrackSpecs({ ...DEFAULT_ORBITS, "planet-moons": true });
     expect(moons.some((track) => track.bodyId === 301)).toBe(false);
     expect(moons.map((track) => track.bodyId)).toContain(501);
     expect(moons.every((track) => track.anchorId !== 10)).toBe(true);
+    expect(moons.every((track) => track.fade !== true)).toBe(true);
+    const earthMoon = orbitTrackSpecs({ ...DEFAULT_ORBITS, "earth-moon": true });
+    expect(earthMoon.map((track) => track.bodyId)).toEqual([301]);
+    expect(earthMoon[0]?.fade).not.toBe(true);
+    const planets = orbitTrackSpecs({
+      ...DEFAULT_ORBITS,
+      mercury: true,
+      venus: true,
+      earth: true,
+      mars: true,
+      jupiter: true,
+      saturn: true,
+      uranus: true,
+      neptune: true,
+      pluto: true,
+    });
+    expect(planets.map((track) => track.bodyId)).toEqual([199, 299, 399, 499, 599, 699, 799, 899, 999]);
+    expect(planets.every((track) => track.fade)).toBe(true);
   });
 
   it("places Saturn after Jupiter", () => {
