@@ -27,7 +27,7 @@ export function Metadata({
 }) {
   const comments = file.comments.map((comment) => comment.trim()).filter(Boolean);
   const names = centerNames(file);
-  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set([segment]));
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const previous = useRef(segment);
   const fileRef = useRef(file);
 
@@ -35,7 +35,7 @@ export function Metadata({
     if (fileRef.current !== file) {
       fileRef.current = file;
       previous.current = segment;
-      setOpen(new Set([segment]));
+      setOpen(new Set());
       return;
     }
     if (previous.current === segment) return;

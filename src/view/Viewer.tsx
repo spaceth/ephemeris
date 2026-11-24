@@ -66,7 +66,7 @@ export function Viewer({
   const shown = file?.segments[session.segment];
   const center = shown ? orbitCenter(shown.centerName) : null;
   const bodyRadiusKm = center?.radiusKm ?? null;
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [clockOpen, setClockOpen] = useState(true);
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 720px)").matches);
   const [vizOpen, setVizOpen] = useState(false);
